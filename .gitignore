@@ -1,16 +1,32 @@
-# env files (sekrety poza repo)
-.env
-.env.*
-!.env.example
+# === Node.js ===
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# Next.js
+# === Next.js ===
 .next/
 out/
 .vercel/
+dist/
 
-# node
-node_modules/
+# === Env files (sekrety tylko lokalnie) ===
+.env
+.env.*
+!.env.example   # zostawiamy tylko szablon w repo
 
-# edytory/OS
+# === Prisma ===
+/prisma/dev.db
+/prisma/dev.db-journal
+
+# === Systemowe / edytorowe ===
 .DS_Store
 Thumbs.db
+*.swp
+*.swo
+
+# === Logs ===
+logs
+*.log
+*.log.*
