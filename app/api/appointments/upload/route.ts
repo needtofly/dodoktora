@@ -1,61 +1,33 @@
-import { NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
+// app/api/appointments/upload/route.ts
+import { NextResponse } from 'next/server'
+import { writeFile } from 'fs/promises'
+import path from 'path'
 
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
-// Limit 10 MB
-const MAX_SIZE = 10 * 1024 * 1024;
-const ALLOWED_TYPES = ["application/pdf", "image/jpeg", "image/png"];
+function sanitizeFilename(name: string) {
+  return name.replace(/[^a-zA-Z0-9.\-_]/g, '_')
+}
 
 export async function POST(req: Request) {
   try {
-    const formData = await req.formData();
-    const file = formData.get("file") as File;
+    const form = await req.formData()
+    const file = form.get('file') as unknown as File | null
+    if (!file) return NextResponse.json({ error: 'Brak pliku w polu "file".' }, { status: 400 })
 
-    if (!file) {
-      return NextResponse.json({ error: "Brak pliku" }, { status: 400 });
-    }
+    const buf = Buffer.from(await file.arrayBuffer())
+    const safe = sanitizeFilename(file.name || 'upload.bin')
+    const target = path.join('/tmp', `${Date.now()}-${safe}`)
+    await writeFile(target, buf)
 
-    // walidacja typu
-    if (!ALLOWED_TYPES.includes(file.type)) {
-      return NextResponse.json(
-        { error: "Dozwolone tylko PDF, JPG i PNG" },
-        { status: 400 }
-      );
-    }
-
-    // walidacja rozmiaru
-    if (file.size > MAX_SIZE) {
-      return NextResponse.json(
-        { error: "Plik za duży (max 10 MB)" },
-        { status: 400 }
-      );
-    }
-
-    // wczytanie zawartości
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-
-    // katalog uploadów
-    const uploadDir = path.join(process.cwd(), "public", "uploads");
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-
-    // unikalna nazwa
-    const uniqueName = `${Date.now()}-${file.name.replace(/\s+/g, "_")}`;
-    const filePath = path.join(uploadDir, uniqueName);
-
-    fs.writeFileSync(filePath, buffer);
-
-    return NextResponse.json({ url: `/uploads/${uniqueName}` });
+    return NextResponse.json({ ok: true, name: file.name, type: file.type, size: buf.length, path: target })
   } catch (err) {
-    console.error("Upload error:", err);
-    return NextResponse.json({ error: "Błąd serwera" }, { status: 500 });
+    console.error('UPLOAD ERROR:', err)
+    return NextResponse.json({ error: 'Błąd podczas przesyłania pliku.' }, { status: 500 })
   }
+}
+
+export async function GET() {
+  return NextResponse.json({ ok: true, hint: 'Wyślij POST multipart/form-data z polem "file".' })
 }
