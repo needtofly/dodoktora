@@ -7,6 +7,17 @@ const nextConfig = {
     ],
   },
   reactStrictMode: true,
-}
 
-module.exports = nextConfig
+  async redirects() {
+    return [
+      // stary, pojedynczy endpoint -> nowy, mnogi
+      {
+        source: '/api/payment/test',
+        destination: '/api/payments/test',
+        permanent: false,
+      },
+    ];
+  },
+};
+
+module.exports = nextConfig;
