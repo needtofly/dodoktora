@@ -1,4 +1,4 @@
-// pages/api/payments/test.ts
+// pages/api/payments/p24/mock.ts
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '@/lib/prisma'
 import { buildIcs } from '@/utils/ics'
@@ -34,7 +34,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       `Termin: ${when.toLocaleString('pl-PL')}\n` +
       `Status płatności: ${booking.status}\n`
 
-    // mail jest best-effort – jeśli SMTP nie skonfigurowane, nie psuj płatności
     await sendBookingEmail({
       to: booking.email || '',
       subject: 'Potwierdzenie rezerwacji — dodoktora.co',
@@ -44,7 +43,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     return res.status(200).json({ ok: true })
   } catch (e) {
-    console.error('[pages/api/payments/test] error:', e)
+    console.error('[pages/api/payments/p24/mock] error:', e)
     return res.status(500).json({ error: 'Błąd serwera' })
   }
 }
