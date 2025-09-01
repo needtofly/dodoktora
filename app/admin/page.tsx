@@ -13,9 +13,20 @@ export default async function Admin() {
     <main className="max-w-6xl mx-auto px-4 py-10">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Rezerwacje</h1>
-        <form action="/api/auth/logout" method="post">
-          <button className="btn">Wyloguj</button>
-        </form>
+
+        <div className="flex items-center gap-3">
+          <a
+            href="/api/admin/export-csv"
+            className="btn"
+            rel="noopener"
+          >
+            Eksportuj CSV
+          </a>
+
+          <form action="/api/auth/logout" method="post">
+            <button className="btn">Wyloguj</button>
+          </form>
+        </div>
       </div>
 
       <AdminTable />

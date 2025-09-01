@@ -1,4 +1,4 @@
-// pages/api/admin/export.ts
+// pages/api/admin/export-csv.ts
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '@/lib/prisma'
 
@@ -13,6 +13,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).end('Method Not Allowed')
   }
 
+  // proste auth jak wcześniej
   const auth = req.cookies?.['admin_auth']
   if (auth !== 'ok') {
     return res.status(401).send('Unauthorized')
