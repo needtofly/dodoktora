@@ -1,3 +1,4 @@
+// pages/api/payments/test.ts
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '@/lib/prisma'
 import { buildIcs } from '@/utils/ics'
@@ -33,6 +34,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       `Termin: ${when.toLocaleString('pl-PL')}\n` +
       `Status płatności: ${booking.status}\n`
 
+    // mail jest best-effort – jeśli SMTP nie skonfigurowane, nie psuj płatności
     await sendBookingEmail({
       to: booking.email || '',
       subject: 'Potwierdzenie rezerwacji — dodoktora.co',
