@@ -1,6 +1,7 @@
 import Image from 'next/image'
 import BookingForm from '@/components/BookingForm'
 import JsonLd from '@/components/JsonLd'
+import { Suspense } from 'react'
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 const NAME = process.env.BUSINESS_NAME || 'dodoktora.co'
@@ -123,7 +124,9 @@ export default function HomePage() {
       {/* Formularz */}
       <section id="umow" className="max-w-3xl mx-auto px-4 scroll-mt-28">
         <h2 className="text-3xl font-bold mb-6 text-center">Umów wizytę</h2>
-        <BookingForm />
+        <Suspense fallback={<div className="text-center py-10">Ładowanie formularza…</div>}>
+          <BookingForm />
+        </Suspense>
       </section>
 
       {/* Lekarze */}

@@ -29,14 +29,14 @@ function roundUpToNext10(date: Date) {
 export default function BookingForm() {
   const sp = useSearchParams();
 
-  const urlType = decodeURIComponent(sp.get("type") || "");
-  const urlDoctor = decodeURIComponent(sp.get("doctor") || "");
+  // 🔧 tylko te dwie linie są zmienione
+  const urlType = decodeURIComponent(sp?.get("type") ?? "");
+  const urlDoctor = decodeURIComponent(sp?.get("doctor") ?? "");
 
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
 
-  // PESEL: wymagany dla obu typów, o ile NIE zaznaczono "nie mam"
   const [pesel, setPesel] = useState("");
   const [noPesel, setNoPesel] = useState(false);
 
@@ -116,7 +116,6 @@ export default function BookingForm() {
       return setErrMsg("Adres wizyty domowej jest wymagany.");
     }
 
-    // Prosta walidacja PESEL: 11 cyfr (bez sumy kontrolnej)
     if (!noPesel) {
       if (!/^\d{11}$/.test(pesel)) {
         return setErrMsg("PESEL musi składać się z 11 cyfr.");
@@ -231,7 +230,7 @@ export default function BookingForm() {
         )}
       </div>
 
-      {/* PESEL (prosta walidacja: 11 cyfr) */}
+      {/* PESEL */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label className={labelCls}>PESEL {noPesel ? "(pominięty)" : "*"}</label>

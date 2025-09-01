@@ -1,0 +1,15 @@
+<!--?xml version="1.0" encoding="UTF-8"?-->
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Tło gradientowe -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#3b82f6"></stop>
+      <stop offset="100%" stop-color="#1d4ed8"></stop>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)" rx="200"></rect>
+
+  <!-- Biały krzyż medyczny -->
+  <rect x="412" y="220" width="200" height="584" fill="white" rx="40"></rect>
+  <rect x="220" y="412" width="584" height="200" fill="white" rx="40"></rect>
+</svg>
