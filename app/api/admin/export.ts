@@ -18,7 +18,7 @@ export default async function handler(_req: NextApiRequest, res: NextApiResponse
         status: true,
         priceCents: true,
         notes: true,
-        // ❌ usunięte address
+        address: true,
         pesel: true,
         noPesel: true,
       }
@@ -27,14 +27,12 @@ export default async function handler(_req: NextApiRequest, res: NextApiResponse
     const header = [
       'id','createdAt','fullName','email','phone',
       'visitType','doctor','date','status','priceCents',
-      'notes','pesel','noPesel'
+      'notes','address','pesel','noPesel'
     ]
 
     const escape = (v: unknown) => {
       const s = v == null ? '' : String(v)
-      return (s.includes('"') || s.includes(',') || s.includes('\n'))
-        ? `"${s.replace(/"/g, '""')}"`
-        : s
+      return (s.includes('"') || s.includes(',') || s.includes('\n')) ? `"${s.replace(/"/g, '""')}"` : s
     }
 
     const rows = list.map(b => [
@@ -49,6 +47,7 @@ export default async function handler(_req: NextApiRequest, res: NextApiResponse
       b.status,
       String(b.priceCents ?? 0),
       b.notes ?? '',
+      b.address ?? '',
       b.pesel ?? '',
       b.noPesel ? 'true' : 'false',
     ].map(escape).join(','))
