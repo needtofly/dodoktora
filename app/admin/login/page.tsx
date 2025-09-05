@@ -10,7 +10,7 @@ export default function AdminLoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string>('')
 
-  // Jeśli już zalogowany → do /admin (albo next=…)
+  // Jeżeli już zalogowany, wejdź od razu do /admin (albo ?next=)
   useEffect(() => {
     ;(async () => {
       try {
@@ -18,14 +18,13 @@ export default function AdminLoginPage() {
         if (r.ok) {
           const j = await r.json().catch(() => ({}))
           if (j?.authed) {
-            const next = sp.get('next') || '/admin'
+            const next = sp?.get('next') ?? '/admin'
             router.replace(next)
           }
         }
       } catch {}
     })()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [router, sp])
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -34,7 +33,7 @@ export default function AdminLoginPage() {
     try {
       const r = await fetch('/api/auth/login', {
         method: 'POST',
-        credentials: 'include',          // ← kluczowe (cookie httpOnly)
+        credentials: 'include', // ważne: potrzebne do ciasteczka httpOnly
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password }),
       })
@@ -46,28 +45,22 @@ export default function AdminLoginPage() {
         return
       }
 
-      // Twarde przejście, żeby SSR na /admin widział cookie
-      const next = sp.get('next') || '/admin'
+      const next = sp?.get('next') ?? '/admin'
       router.replace(next)
-      router.refresh()
-      // fallback gdyby SPA się uparło
-      setTimeout(() => { window.location.href = next }, 50)
     } catch (e: any) {
       setError(e?.message || 'Błąd sieci')
     }
   }
 
+  // Przydatne do diagnostyki – pokaże co widzi serwer
   const debugWhoAmI = async () => {
-    const r = await fetch('/api/admin/_whoami', { cache: 'no-store', credentials: 'include' })
-    const j = await r.json().catch(() => ({}))
-    alert(JSON.stringify(j, null, 2))
-  }
-
-  const doLogout = async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
-    } catch {}
-    window.location.href = '/admin/login'
+      const r = await fetch('/api/admin/_whoami', { cache: 'no-store', credentials: 'include' })
+      const j = await r.json().catch(() => ({}))
+      alert(JSON.stringify(j, null, 2))
+    } catch (e: any) {
+      alert(e?.message || 'Błąd')
+    }
   }
 
   return (
@@ -86,9 +79,8 @@ export default function AdminLoginPage() {
         <button type="submit" className="btn btn-primary w-full h-12">Zaloguj</button>
       </form>
 
-      <div className="mt-6 text-sm text-gray-600 flex gap-4">
+      <div className="mt-6 text-sm text-gray-600">
         <button onClick={debugWhoAmI} className="underline">Pokaż /api/admin/_whoami</button>
-        <button onClick={doLogout} className="underline">Wyloguj</button>
       </div>
     </main>
   )
