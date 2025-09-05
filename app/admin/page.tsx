@@ -1,3 +1,4 @@
+// app/admin/page.tsx
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -12,7 +13,7 @@ type Booking = {
   phone: string;
   visitType: "Teleporada" | "Wizyta domowa";
   doctor: string;
-  date: string; // ISO
+  date: string;
   notes?: string;
   address?: string;
   pesel?: string;
@@ -24,17 +25,25 @@ function getBaseUrl() {
   const h = headers();
   const proto = h.get("x-forwarded-proto") ?? "http";
   const host = h.get("x-forwarded-host") ?? h.get("host");
-  // host bywa null gdy odpalasz bez requestu – zabezpieczenie:
   if (!host) return "";
   return `${proto}://${host}`;
 }
 
-async function fetchBookings(): Promise<{ ok: boolean; items: Booking[]; error?: string }> {
+async function fetchBookings(cookieHeader: string): Promise<{ ok: boolean; items: Booking[]; error?: string }> {
   try {
     const base = getBaseUrl();
     const url = `${base}/api/admin/bookings`;
-    const res = await fetch(url, { cache: "no-store" });
+    const res = await fetch(url, {
+      cache: "no-store",
+      headers: { cookie: cookieHeader, accept: "application/json" },
+    });
 
+    if (res.status === 401) {
+      return { ok: false, items: [], error: "HTTP 401 – Unauthorized" };
+    }
+    if (res.status === 405) {
+      return { ok: false, items: [], error: "HTTP 405 – Method not allowed" };
+    }
     if (!res.ok) {
       let msg = `HTTP ${res.status}`;
       try {
@@ -45,25 +54,25 @@ async function fetchBookings(): Promise<{ ok: boolean; items: Booking[]; error?:
     }
 
     const data = await res.json().catch(() => null);
-    if (!data || typeof data !== "object") return { ok: false, items: [], error: "Zła odpowiedź API" };
-    return {
-      ok: !!(data as any).ok,
-      items: Array.isArray((data as any).items) ? (data as any).items : [],
-      error: (data as any).ok ? undefined : (data as any).error || "Błąd API",
-    };
+    if (Array.isArray(data)) return { ok: true, items: data as Booking[] };
+    if (Array.isArray((data as any)?.items)) return { ok: true, items: (data as any).items as Booking[] };
+    return { ok: false, items: [], error: "Nieprawidłowe dane z API" };
   } catch (e: any) {
     return { ok: false, items: [], error: e?.message || "Błąd połączenia" };
   }
 }
 
 export default async function AdminPage() {
-  // Wymagaj zalogowania
-  const auth = cookies().get("admin_auth");
+  // WYMAGAJ LOGOWANIA po stronie serwera
+  const cookieStore = cookies();
+  const auth = cookieStore.get("admin_auth");
   if (!auth || auth.value !== "ok") {
-    redirect("/admin/login");
+    redirect("/admin/login?next=" + encodeURIComponent("/admin"));
   }
 
-  const { ok, items, error } = await fetchBookings();
+  // Pobierz listę z przekazaniem ciasteczek do API
+  const cookieHeader = headers().get("cookie") ?? "";
+  const { ok, items, error } = await fetchBookings(cookieHeader);
 
   return (
     <div className="mx-auto max-w-5xl p-6">
@@ -98,8 +107,11 @@ export default async function AdminPage() {
             ) : (
               items.map((b, i) => {
                 const d = new Date(b.date);
-                const dStr = isNaN(d.getTime()) ? b.date : d.toLocaleDateString("pl-PL");
-                const tStr = isNaN(d.getTime()) ? "" : d.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" });
+                const isValid = !isNaN(d.getTime());
+                const dStr = isValid ? d.toLocaleDateString("pl-PL", { timeZone: "Europe/Warsaw" }) : b.date;
+                const tStr = isValid
+                  ? d.toLocaleTimeString("pl-PL", { timeZone: "Europe/Warsaw", hour: "2-digit", minute: "2-digit" })
+                  : "";
                 return (
                   <tr key={b.id || i} className="border-t">
                     <td className="px-3 py-2">{dStr}</td>

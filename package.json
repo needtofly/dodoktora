@@ -4,16 +4,17 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "dev:turbo": "next dev --turbo",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
-    "icons": "node scripts/gen-icons.mjs"
+    "icons": "node scripts/gen-icons.mjs",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@prisma/client": "5.22.0",
+    "cookie": "^1.0.2",
     "date-fns": "^4.1.0",
     "next": "14.2.31",
     "nodemailer": "^6.9.8",
@@ -22,6 +23,7 @@
     "react-dom": "^18"
   },
   "devDependencies": {
+    "@types/cookie": "^0.6.0",
     "@types/node": "^20",
     "@types/nodemailer": "^6.4.14",
     "@types/react": "^18",

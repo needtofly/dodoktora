@@ -1,96 +1,56 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
-
-type Params = {
-  bookingId: string;
-  amount: string;   // "49.00"
-  currency: string; // "PLN"
-};
+import { useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 
 export default function P24MockView() {
-  const router = useRouter();
+  const sp = useSearchParams();
 
-  const [params, setParams] = useState<Params>({
-    bookingId: "",
-    amount: "0.00",
-    currency: "PLN",
-  });
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState("");
+  // akceptujemy różne nazwy: id / bookingId / booking
+  const bookingId = useMemo(
+    () => sp.get("id") || sp.get("bookingId") || sp.get("booking") || "",
+    [sp]
+  );
 
-  useEffect(() => {
-    try {
-      const sp = new URLSearchParams(window.location.search);
-      const id = sp.get("bookingId") || sp.get("id") || "";
-      const rawAmount = sp.get("amount") || "0";
-      const v = parseFloat(rawAmount);
-      const amount = Number.isFinite(v) ? v.toFixed(2) : "0.00";
-      const currency = sp.get("currency") || "PLN";
-      setParams({ bookingId: id, amount, currency });
-    } catch {
-      /* ignore */
-    }
-  }, []);
+  const amountNum = useMemo(() => {
+    const raw = sp.get("amount") || sp.get("value") || sp.get("total") || "0";
+    const v = parseFloat(raw.replace(",", "."));
+    return Number.isFinite(v) ? v : 0;
+  }, [sp]);
 
-  const canPay = useMemo(() => !!params.bookingId, [params.bookingId]);
-
-  async function handlePay() {
-    setErr("");
-    if (!params.bookingId) {
-      setErr("Brak ID rezerwacji. Wróć do strony głównej.");
-      return;
-    }
-    setLoading(true);
-    try {
-      // „udajemy” webhook P24 – zwróci 200 OK
-      await fetch("/api/platnosc/p24/notify", { method: "POST" }).catch(() => {});
-    } finally {
-      const qs = new URLSearchParams({
-        status: "success",
-        tr_status: "success",
-        id: params.bookingId,
-        bookingId: params.bookingId,
-        orderId: params.bookingId,
-        amount: params.amount,
-        currency: params.currency,
-      });
-      router.push(`/platnosc/p24/return?${qs.toString()}`);
-    }
-  }
+  const payHref = useMemo(() => {
+    if (!bookingId || amountNum <= 0) return null;
+    // Tu używamy istniejącego endpointu testowego
+    return `/api/payments/test?id=${encodeURIComponent(
+      bookingId
+    )}&amount=${encodeURIComponent(amountNum.toFixed(2))}`;
+  }, [bookingId, amountNum]);
 
   return (
-    <div className="mx-auto max-w-xl p-6 bg-white rounded-2xl border shadow-sm space-y-4">
-      <h1 className="text-2xl font-semibold">Płatność testowa P24</h1>
+    <main className="max-w-md mx-auto px-4 py-16">
+      <h1 className="text-2xl font-bold mb-4">Płatność testowa P24</h1>
 
-      {err && (
-        <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-red-700 text-sm" role="alert">
-          {err}
+      {!bookingId ? (
+        <div className="rounded border border-red-200 bg-red-50 p-3 text-red-700">
+          Brak ID rezerwacji. Wróć do strony głównej.
         </div>
+      ) : (
+        <>
+          <p className="mb-1">Rezerwacja: <strong>{bookingId}</strong></p>
+          <p className="mb-6">Kwota: <strong>{amountNum.toFixed(2)} zł</strong></p>
+
+          {payHref ? (
+            // zwykły <a> – zawsze „klikalny”
+            <a className="btn btn-primary" href={payHref}>
+              Zapłać testowo
+            </a>
+          ) : (
+            <div className="rounded border border-red-200 bg-red-50 p-3 text-red-700">
+              Nieprawidłowa kwota.
+            </div>
+          )}
+        </>
       )}
-
-      <div className="text-sm text-gray-600">
-        <div><span className="font-medium text-gray-800">Rezerwacja:</span> {params.bookingId || "—"}</div>
-        <div><span className="font-medium text-gray-800">Kwota:</span> {params.amount} {params.currency}</div>
-      </div>
-
-      <div className="flex gap-3 pt-2">
-        <button
-          onClick={handlePay}
-          disabled={loading || !canPay}
-          className="px-4 h-11 rounded-xl border bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
-        >
-          {loading ? "Przetwarzanie…" : "Zapłać (testowo)"}
-        </button>
-
-        <a
-          href="/cancel"
-          className="px-4 h-11 rounded-xl border bg-white hover:bg-gray-50 text-gray-800"
-        >
-          Anuluj
-        </a>
-      </div>
-    </div>
+    </main>
   );
 }

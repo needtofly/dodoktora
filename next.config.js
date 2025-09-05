@@ -7,15 +7,12 @@ const nextConfig = {
     ],
   },
   reactStrictMode: true,
-
+  experimental: {
+    serverComponentsExternalPackages: ['@prisma/client', 'prisma'],
+  },
   async redirects() {
     return [
-      // stary, pojedynczy endpoint -> nowy, mnogi
-      {
-        source: '/api/payment/test',
-        destination: '/api/payments/test',
-        permanent: false,
-      },
+      { source: '/api/payment/test', destination: '/api/payments/test', permanent: false },
     ];
   },
 };

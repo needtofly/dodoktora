@@ -10,21 +10,26 @@ datasource db {
 }
 
 model Booking {
-  id        String   @id @default(uuid())
-  fullName  String
-  email     String
-  phone     String
-  visitType String
-  doctor    String
-  date      DateTime
-  notes     String?
-  address   String?
-  pesel     String?
-  noPesel   Boolean  @default(false)
-  amount    Int
-  currency  String   @default("PLN")
-  status    String   @default("PENDING")
-  createdAt DateTime @default(now())
+  id          String   @id @default(uuid())
+  fullName    String
+  email       String
+  phone       String
+  visitType   String
+  doctor      String?          // opcjonalne, żeby UI/API nie sypały się gdy brak lekarza
+  date        DateTime
+  notes       String?
+  address     String?
+  pesel       String?
+  noPesel     Boolean  @default(false)
+
+  // ✅ spójne z panelem / API
+  priceCents  Int      @default(0)   // zamiast wcześniejszego "amount"
+  currency    String   @default("PLN")
+  status      String   @default("PENDING")
+  realized    Boolean  @default(false)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
 
   @@index([date])
 }

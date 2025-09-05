@@ -1,46 +1,39 @@
-// app/api/bookings/availability/route.ts
-import { NextResponse } from 'next/server'
+// pages/api/bookings/availability.ts
+import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '@/lib/prisma'
 
-// ważne: oznaczamy jako dynamiczne, żeby Next nie próbował tego prerenderować
-export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== 'GET') {
+    res.setHeader('Allow', 'GET')
+    return res.status(405).json({ error: 'Method not allowed' })
+  }
 
-export async function GET(req: Request) {
+  const dateStr = String(req.query.date || '')
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return res.status(400).json({ error: 'Nieprawidłowa data' })
+  }
+
   try {
-    const { searchParams } = new URL(req.url)
-    const date = searchParams.get('date') // YYYY-MM-DD (lokalnie z formularza)
-    if (!date) {
-      return NextResponse.json(
-        { error: 'Parametr date jest wymagany (YYYY-MM-DD).' },
-        { status: 400 }
-      )
-    }
+    // Zakładamy, że daty zapisujemy w UTC (tak generatesz po stronie klienta z "Z").
+    const start = new Date(`${dateStr}T00:00:00.000Z`)
+    const end = new Date(start); end.setUTCDate(end.getUTCDate() + 1)
 
-    // Zakładamy zapis UTC (np. `${date}T${time}:00.000Z`)
-    const start = new Date(`${date}T00:00:00.000Z`)
-    const end   = new Date(`${date}T23:59:59.999Z`)
-
-    const booked = await prisma.booking.findMany({
-      where: {
-        visitType: 'Teleporada',
-        status: { in: ['PENDING', 'PAID'] },
-        date: { gte: start, lte: end },
-      },
+    const bookings = await prisma.booking.findMany({
+      where: { date: { gte: start, lt: end } },
       select: { date: true },
     })
 
-    // Zwróć listę HH:MM (UTC), tak jak składamy czas w formularzu
-    const pad = (n: number) => String(n).padStart(2, '0')
-    const taken = booked.map(b => {
-      const h = b.date.getUTCHours()
-      const m = b.date.getUTCMinutes()
-      return `${pad(h)}:${pad(m)}`
+    // Zwróć HH:mm w CZASIE LOKALNYM serwera (spójne z tym, co widzi użytkownik w formularzu):
+    const taken = bookings.map(b => {
+      const d = new Date(b.date)
+      const hh = String(d.getHours()).padStart(2, '0')
+      const mm = String(d.getMinutes()).padStart(2, '0')
+      return `${hh}:${mm}`
     })
 
-    return NextResponse.json({ taken })
+    return res.status(200).json({ taken })
   } catch (e) {
-    console.error('[availability] error:', e)
-    return NextResponse.json({ error: 'Błąd serwera' }, { status: 500 })
+    console.error('availability error:', e)
+    return res.status(500).json({ error: 'DB error' })
   }
 }

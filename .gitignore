@@ -32,3 +32,6 @@ logs
 *.log.*
 
 .vercel
+.env
+.env.local
+.env.production

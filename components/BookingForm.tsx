@@ -26,10 +26,25 @@ function roundUpToNext10(date: Date) {
   return d;
 }
 
+// YYYY-MM-DD dla lokalnego czasu (bez UTC/ISO)
+function localDateStr(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+// Zamiana lokalnych date+time na ISO (UTC) poprawnie liczone z lokalnej strefy
+function localDateTimeToISO(dateStr: string, timeStr: string) {
+  const [y, mo, d] = dateStr.split("-").map(Number);
+  const [hh, mm] = timeStr.split(":").map(Number);
+  const local = new Date(y, mo - 1, d, hh, mm, 0, 0);
+  return local.toISOString();
+}
+
 export default function BookingForm() {
   const sp = useSearchParams();
 
-  // 🔧 tylko te dwie linie są zmienione
   const urlType = decodeURIComponent(sp?.get("type") ?? "");
   const urlDoctor = decodeURIComponent(sp?.get("doctor") ?? "");
 
@@ -54,7 +69,7 @@ export default function BookingForm() {
   const [errMsg, setErrMsg] = useState<string>("");
 
   const today = new Date();
-  const todayStr = today.toISOString().split("T")[0];
+  const todayStr = localDateStr(today);
 
   const price = useMemo(() => (visitType === "Teleporada" ? 49 : 350), [visitType]);
 
@@ -100,8 +115,10 @@ export default function BookingForm() {
 
   const isValidSelectedDateTime = () => {
     if (!date || !time) return false;
-    const dt = new Date(`${date}T${time}:00.000Z`);
-    return dt.getTime() > Date.now();
+    const [y, mo, d] = date.split("-").map(Number);
+    const [hh, mm] = time.split(":").map(Number);
+    const local = new Date(y, mo - 1, d, hh, mm, 0, 0); // lokalny czas
+    return local.getTime() > Date.now();
   };
 
   const submit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -126,7 +143,8 @@ export default function BookingForm() {
     setLoading(true);
 
     try {
-      const iso = new Date(`${date}T${time}:00.000Z`).toISOString();
+      // ISO liczone z lokalnego czasu -> serwer zapisze UTC, ale odpowiadające lokalnie wybranej godzinie
+      const iso = localDateTimeToISO(date, time);
 
       const res = await fetch("/api/bookings", {
         method: "POST",
@@ -150,8 +168,7 @@ export default function BookingForm() {
       if (!res.ok || !data?.ok) {
         setLoading(false);
         return setErrMsg(data?.error || `Błąd (${res.status}) podczas rezerwacji. Spróbuj ponownie.`);
-      }
-
+        }
       window.location.assign(data.redirectUrl || "/platnosc/p24/mock");
     } catch {
       setErrMsg("Wystąpił błąd sieci. Spróbuj ponownie.");

@@ -1,104 +1,97 @@
 // pages/api/bookings/index.ts
-import type { NextApiRequest, NextApiResponse } from 'next';
+import type { NextApiRequest, NextApiResponse } from "next";
+import { prisma } from "@/lib/prisma";
 
-let prisma: any = null;
-try {
-  const { prisma: p } = require('@/lib/prisma');
-  prisma = p;
-} catch {
-  prisma = null;
+const TZ = "Europe/Warsaw";
+
+function ymdInWarsaw(iso: string | Date) {
+  const d = new Date(iso);
+  return d.toLocaleDateString("sv-SE", { timeZone: TZ });
 }
-
-type VisitType = 'Teleporada' | 'Wizyta domowa';
-
-function genId() {
-  try { return crypto.randomUUID(); } catch {}
-  return 'b_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+function hhmmInWarsaw(iso: string | Date) {
+  const d = new Date(iso);
+  return d.toLocaleTimeString("pl-PL", {
+    timeZone: TZ,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== 'POST') {
-    res.setHeader('Allow', 'POST');
-    return res.status(405).json({ ok: false, error: 'Method Not Allowed' });
-  }
+  if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Method not allowed" });
 
   try {
-    const body = (req.body || {}) as {
-      fullName?: string;
-      email?: string;
-      phone?: string;
-      visitType?: VisitType;
-      doctor?: string;
-      date?: string; // ISO
-      notes?: string;
-      address?: string;
-      pesel?: string;
-      noPesel?: boolean;
-    };
+    const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
+    const {
+      fullName,
+      email,
+      phone,
+      visitType,
+      doctor,
+      date, // ISO z frontu
+      notes,
+      address,
+      pesel,
+      noPesel,
+    } = body;
 
-    const required = ['fullName', 'email', 'phone', 'visitType', 'doctor', 'date'] as const;
-    for (const k of required) {
-      if (!body[k]) return res.status(400).json({ ok: false, error: `Brak pola: ${k}` });
+    if (!fullName || !email || !phone || !visitType || !doctor || !date) {
+      return res.status(400).json({ ok: false, error: "Brak wymaganych pól." });
     }
 
-    const amount = body.visitType === 'Wizyta domowa' ? 350 : 49;
+    const priceCents = visitType === "Wizyta domowa" ? 35000 : 4900;
 
-    const data: any = {
-      fullName: body.fullName!,
-      email: body.email!,
-      phone: body.phone!,
-      visitType: body.visitType!,
-      doctor: body.doctor!,
-      date: new Date(body.date!),
-      notes: body.notes || null,
-      address: body.visitType === 'Wizyta domowa' ? (body.address || null) : null,
-      pesel: body.noPesel ? null : (body.pesel || null),
-      noPesel: !!body.noPesel,
-      amount,
-      currency: 'PLN',
-      status: 'PENDING',
-      createdAt: new Date(),
-    };
+    let finalNotes = (notes || "").trim();
+    if (visitType === "Wizyta domowa" && address?.trim()) {
+      finalNotes = `Adres wizyty domowej: ${address.trim()}\n${finalNotes}`.trim();
+    }
 
-    let bookingId = genId();
-    let dbSaved = false;
-    let dbError: string | undefined;
-
-    if (process.env.DATABASE_URL && prisma && prisma.booking?.create) {
-      try {
-        const rec = await prisma.booking.create({ data });
-        bookingId = rec?.id || bookingId;
-        dbSaved = true;
-      } catch (e: any) {
-        dbError = e?.message || String(e);
-        console.warn('[POST /api/bookings] DB save failed:', dbError);
+    // twarda blokada konfliktu dla Teleporady (dzień + HH:mm w PL)
+    if (visitType === "Teleporada") {
+      const targetYMD = ymdInWarsaw(date);
+      const targetHM = hhmmInWarsaw(date);
+      const existing = await prisma.booking.findMany({
+        where: { visitType: "Teleporada" },
+        select: { date: true, status: true },
+      });
+      const conflict = existing.some((b) => {
+        if (String(b.status || "").toUpperCase() === "CANCELLED") return false;
+        return ymdInWarsaw(b.date as any) === targetYMD && hhmmInWarsaw(b.date as any) === targetHM;
+      });
+      if (conflict) {
+        return res.status(409).json({ ok: false, error: "Ten termin jest już zajęty." });
       }
-    } else {
-      dbError = !process.env.DATABASE_URL
-        ? 'Missing DATABASE_URL'
-        : !prisma
-        ? 'No Prisma client'
-        : 'Model prisma.booking missing';
     }
 
-    const qs = new URLSearchParams({
-      id: bookingId,
-      bookingId,
-      amount: amount.toFixed(2),
-      currency: 'PLN',
+    const created = await prisma.booking.create({
+      data: {
+        fullName,
+        email,
+        phone,
+        visitType,
+        doctor,
+        date: new Date(date),
+        notes: finalNotes || null,
+        address: visitType === "Wizyta domowa" ? address?.trim() || null : null,
+        pesel: pesel || null,
+        noPesel: !!noPesel,
+        status: "PENDING",
+        priceCents,
+        realized: false,
+      },
+      select: { id: true },
     });
-    const redirectUrl = `/platnosc/p24/mock?${qs.toString()}`;
 
+    // ⬇⬇ KLUCZ: przekażemy ID i kwotę w URL do mocku płatności
+    const amountStr = (priceCents / 100).toFixed(2);
     return res.status(200).json({
       ok: true,
-      bookingId,
-      amount,
-      currency: 'PLN',
-      redirectUrl,
-      dbSaved,
-      ...(dbError ? { dbError } : {}),
+      id: created.id,
+      priceCents,
+      redirectUrl: `/platnosc/p24/mock?id=${encodeURIComponent(created.id)}&amount=${encodeURIComponent(amountStr)}`,
     });
   } catch (e: any) {
-    return res.status(500).json({ ok: false, error: e?.message || 'Server error' });
+    return res.status(500).json({ ok: false, error: "Błąd serwera", detail: e?.message ?? String(e) });
   }
 }

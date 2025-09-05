@@ -1,62 +1,95 @@
-"use client";
+// app/admin/login/page.tsx
+'use client'
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 
 export default function AdminLoginPage() {
-  const [password, setPassword] = useState("");
-  const [err, setErr] = useState("");
-  const [loading, setLoading] = useState(false);
-  const router = useRouter();
+  const sp = useSearchParams()
+  const router = useRouter()
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState<string>('')
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setErr("");
-    setLoading(true);
+  // Jeśli już zalogowany → do /admin (albo next=…)
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const r = await fetch('/api/admin/_whoami', { cache: 'no-store', credentials: 'include' })
+        if (r.ok) {
+          const j = await r.json().catch(() => ({}))
+          if (j?.authed) {
+            const next = sp.get('next') || '/admin'
+            router.replace(next)
+          }
+        }
+      } catch {}
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+
     try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const r = await fetch('/api/auth/login', {
+        method: 'POST',
+        credentials: 'include',          // ← kluczowe (cookie httpOnly)
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password }),
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => null);
-        throw new Error(j?.error || `HTTP ${res.status}`);
+      })
+
+      if (!r.ok) {
+        let msg = `HTTP ${r.status}`
+        try { const j = await r.json(); if (j?.error) msg = j.error } catch {}
+        setError(msg)
+        return
       }
-      router.push("/admin");
+
+      // Twarde przejście, żeby SSR na /admin widział cookie
+      const next = sp.get('next') || '/admin'
+      router.replace(next)
+      router.refresh()
+      // fallback gdyby SPA się uparło
+      setTimeout(() => { window.location.href = next }, 50)
     } catch (e: any) {
-      setErr(e?.message || "Błąd logowania");
-      setLoading(false);
+      setError(e?.message || 'Błąd sieci')
     }
   }
 
+  const debugWhoAmI = async () => {
+    const r = await fetch('/api/admin/_whoami', { cache: 'no-store', credentials: 'include' })
+    const j = await r.json().catch(() => ({}))
+    alert(JSON.stringify(j, null, 2))
+  }
+
+  const doLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
+    } catch {}
+    window.location.href = '/admin/login'
+  }
+
   return (
-    <div className="mx-auto max-w-sm p-6 bg-white rounded-2xl border shadow-sm mt-10">
-      <h1 className="text-xl font-semibold mb-4">Logowanie — panel admina</h1>
-
-      {err && (
-        <div className="mb-4 p-3 rounded-lg border border-red-200 bg-red-50 text-red-700 text-sm">
-          {err}
-        </div>
-      )}
-
-      <form onSubmit={onSubmit} className="space-y-3">
+    <main className="max-w-md mx-auto px-4 py-16">
+      <h1 className="text-2xl font-semibold mb-6">Logowanie do panelu</h1>
+      {error && <div className="mb-4 rounded border border-red-200 bg-red-50 p-3 text-red-700">{error}</div>}
+      <form onSubmit={onSubmit} className="space-y-4">
         <input
           type="password"
+          className="w-full h-12 px-4 rounded border border-gray-300"
+          placeholder="Hasło administratora"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="Hasło administratora"
-          className="w-full h-12 px-4 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500"
-          required
+          autoFocus
         />
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full h-11 rounded-xl border bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
-        >
-          {loading ? "Logowanie…" : "Zaloguj"}
-        </button>
+        <button type="submit" className="btn btn-primary w-full h-12">Zaloguj</button>
       </form>
-    </div>
-  );
+
+      <div className="mt-6 text-sm text-gray-600 flex gap-4">
+        <button onClick={debugWhoAmI} className="underline">Pokaż /api/admin/_whoami</button>
+        <button onClick={doLogout} className="underline">Wyloguj</button>
+      </div>
+    </main>
+  )
 }
