@@ -1,18 +1,34 @@
-import { NextResponse } from 'next/server'
+// pages/api/auth/login.ts
+import type { NextApiRequest, NextApiResponse } from 'next';
 
-export async function POST(req: Request) {
-  const { password } = await req.json().catch(() => ({ password: '' }))
-  const ok = password && process.env.ADMIN_PASSWORD && password === process.env.ADMIN_PASSWORD
-  if (!ok) {
-    return NextResponse.json({ error: 'Nieprawidłowe hasło' }, { status: 401 })
+function getPasswordFromReq(req: NextApiRequest): string {
+  const body: any = req.body || {};
+  const val = body.password ?? body.haslo ?? '';
+  return typeof val === 'string' ? val : String(val || '');
+}
+
+export default function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== 'POST') {
+    res.setHeader('Allow', 'POST');
+    return res.status(405).json({ error: 'Method Not Allowed' });
   }
-  const res = NextResponse.json({ ok: true })
-  res.cookies.set('admin_auth', 'ok', {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
-    path: '/',
-    maxAge: 60 * 60 * 8, // 8h
-  })
-  return res
+
+  const expected = process.env.ADMIN_PASSWORD;
+  const given = getPasswordFromReq(req);
+  const ok = !!expected && !!given && given === expected;
+
+  if (!ok) return res.status(401).json({ error: 'Nieprawidłowe hasło' });
+
+  const isProd = process.env.NODE_ENV === 'production';
+  const cookie = [
+    `admin_auth=ok`,
+    `Path=/`,
+    `HttpOnly`,
+    `SameSite=Lax`,
+    `Max-Age=${60 * 60 * 8}`,
+    isProd ? `Secure` : null,
+  ].filter(Boolean).join('; ');
+
+  res.setHeader('Set-Cookie', cookie);
+  return res.status(200).json({ ok: true });
 }

@@ -1,30 +1,30 @@
+// prisma/schema.prisma
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model Booking {
-  id              String   @id @default(cuid())
-  fullName        String
-  email           String
-  phone           String
-  visitType       String
-  doctor          String?
-  date            DateTime
-  notes           String?
-  status          String   @default("PENDING")
-  priceCents      Int
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  stripeSessionId String?  @unique
-  stripePaymentId String?
+  id        String   @id @default(uuid())
+  fullName  String
+  email     String
+  phone     String
+  visitType String
+  doctor    String
+  date      DateTime
+  notes     String?
+  address   String?
+  pesel     String?
+  noPesel   Boolean  @default(false)
+  amount    Int
+  currency  String   @default("PLN")
+  status    String   @default("PENDING")
+  createdAt DateTime @default(now())
 
-  realized        Boolean  @default(false)
-
-  // <-- to pole musi istnieć
-  pesel           String?
+  @@index([date])
 }

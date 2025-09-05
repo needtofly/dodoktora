@@ -1,0 +1,42 @@
+Folder PATH listing
+Volume serial number is 0000007B 7A58:01F1
+C:\USERS\JS ENTERPRISE\TELEMED\PAGES
+\---api
+    |   health.ts
+    |   ping.ts
+    |   
+    +---admin
+    |   |   bookings.ts
+    |   |   export.ts
+    |   |   
+    |   \---bookings
+    |           availability.ts
+    |           index.ts
+    |           [id].ts
+    |           
+    +---auth
+    |       login.ts
+    |       logout.ts
+    |       
+    +---bookings
+    |       availability.ts
+    |       index.ts
+    |       
+    +---payments
+    |   |   test.ts
+    |   |   
+    |   \---p24
+    |           [...all].ts
+    |           
+    \---platnosc
+        |   index.ts
+        |   
+        \---p24
+            |   mock.ts
+            |   notify.ts
+            |   [...all].ts
+            |   
+            \---mock
+                    page.tsx
+                    view.tsx
+                    

@@ -4,9 +4,13 @@ import "./globals.css";
 import HeaderNav from "@/components/HeaderNav";
 import Footer from "@/components/Footer";
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://dodoktora.co";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: "dodoktora.co — Teleporady i wizyty domowe",
-  description: "Zarezerwuj teleporadę lub wizytę domową u lekarza. Profesjonalna opieka medyczna dostępna online.",
+  description:
+    "Zarezerwuj teleporadę lub wizytę domową u lekarza. Profesjonalna opieka medyczna dostępna online.",
   keywords: ["teleporada", "wizyta domowa", "lekarz online", "przychodnia", "dodoktora.co"],
   openGraph: {
     title: "dodoktora.co — Teleporady i wizyty domowe",

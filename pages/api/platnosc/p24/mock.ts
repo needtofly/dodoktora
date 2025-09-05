@@ -1,5 +1,5 @@
-// pages/api/health.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
 export default function handler(_req: NextApiRequest, res: NextApiResponse) {
-  res.status(200).json({ ok: true });
+  res.setHeader('Location', '/platnosc/p24/mock');
+  return res.status(302).end();
 }

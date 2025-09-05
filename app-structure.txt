@@ -1,0 +1,80 @@
+Folder PATH listing
+Volume serial number is 000000D0 7A58:01F1
+C:\USERS\JS ENTERPRISE\TELEMED\APP
+|   error.tsx
+|   favicon.ico
+|   globals.css
+|   layout.tsx
+|   manifest.ts
+|   not-found.tsx
+|   page.tsx
+|   robots.ts
+|   
++---admin
+|   |   page.tsx
+|   |   
+|   \---login
+|           page.tsx
+|           
++---artykuly
+|   |   page.tsx
+|   |   
+|   +---kategoria
+|   |   \---[slug]
+|   |           page.tsx
+|   |           
+|   +---kategorie
+|   |       page.tsx
+|   |       
+|   \---[slug]
+|           opengraph-image.tsx
+|           page.tsx
+|           
++---cancel
+|       page.tsx
+|       
++---dziekujemy
+|       page.tsx
+|       
++---feed.xml
++---lekarze
+|       page.tsx
+|       
++---platnosc
+|   \---p24
+|       +---mock
+|       |       page.tsx
+|       |       view.tsx
+|       |       
+|       \---return
+|               page.tsx
+|               view.tsx
+|               
++---platnosc-testowa
+|       page.tsx
+|       view.tsx
+|       
++---polityka-prywatnosci
+|       page.tsx
+|       
++---regulamin
+|       page.tsx
+|       
++---sitemap-posts.xml
++---sitemap-static.xml
++---sitemap.xml
++---success
+|       page.tsx
+|       
++---test-submit
+|       page.tsx
+|       
+\---uslugi
+    |   page.tsx
+    |   
+    +---teleporada
+    |       page.tsx
+    |       
+    \---wizyta-domowa
+            page.tsx
+            
