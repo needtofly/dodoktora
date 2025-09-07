@@ -63,10 +63,11 @@ export default function BookingForm() {
   );
   const [doctor, setDoctor] = useState<string>(urlDoctor || DOCTORS[0]);
 
-  // Nowe rozbite pola adresu (wymagane dla wizyty domowej)
-  const [addressLine1, setAddressLine1] = useState(""); // ulica i numer
-  const [postalCode, setPostalCode] = useState(""); // 00-000
-  const [city, setCity] = useState("");
+  // rozbite pola adresu dla wizyty domowej
+  const [city, setCity] = useState("");         // Miejscowość
+  const [street, setStreet] = useState("");     // Ulica
+  const [houseNumber, setHouseNumber] = useState(""); // Numer domu
+  const [postalCode, setPostalCode] = useState("");   // 00-000
 
   const [loading, setLoading] = useState(false);
   const [errMsg, setErrMsg] = useState<string>("");
@@ -132,9 +133,10 @@ export default function BookingForm() {
     if (!isValidSelectedDateTime()) return setErrMsg("Nie można rezerwować terminu w przeszłości.");
 
     if (visitType === "Wizyta domowa") {
-      if (!addressLine1.trim()) return setErrMsg("Podaj ulicę i numer.");
+      if (!city.trim()) return setErrMsg("Podaj miejscowość.");
+      if (!street.trim()) return setErrMsg("Podaj ulicę.");
+      if (!houseNumber.trim()) return setErrMsg("Podaj numer domu.");
       if (!/^\d{2}-\d{3}$/.test(postalCode)) return setErrMsg("Podaj kod pocztowy w formacie 00-000.");
-      if (!city.trim()) return setErrMsg("Podaj miasto.");
     }
 
     if (!noPesel) {
@@ -150,10 +152,14 @@ export default function BookingForm() {
       // ISO liczone z lokalnego czasu -> serwer zapisze UTC, ale odpowiadające lokalnie wybranej godzinie
       const iso = localDateTimeToISO(date, time);
 
-      // Złożony adres (legacy) – dla zgodności z backendem
+      // addressLine1 składamy z ulicy i numeru domu
+      const addressLine1 =
+        visitType === "Wizyta domowa" ? `${street.trim()} ${houseNumber.trim()}` : undefined;
+
+      // Legacy złożony adres — jeśli gdzieś jeszcze używasz jednego stringa
       const addressCombined =
         visitType === "Wizyta domowa"
-          ? `${addressLine1.trim()}, ${postalCode.trim()} ${city.trim()}`
+          ? `${street.trim()} ${houseNumber.trim()}, ${postalCode.trim()} ${city.trim()}`
           : undefined;
 
       const res = await fetch("/api/bookings", {
@@ -167,11 +173,10 @@ export default function BookingForm() {
           visitType,
           doctor,
           date: iso,
-          // adres – nowe rozbite pola
-          addressLine1: visitType === "Wizyta domowa" ? addressLine1.trim() : undefined,
-          postalCode: visitType === "Wizyta domowa" ? postalCode.trim() : undefined,
+          // adres — nowe rozbite pola + legacy
           city: visitType === "Wizyta domowa" ? city.trim() : undefined,
-          // legacy fallback
+          postalCode: visitType === "Wizyta domowa" ? postalCode.trim() : undefined,
+          addressLine1,
           address: addressCombined,
           // pesel
           pesel: !noPesel ? pesel : undefined,
@@ -238,7 +243,7 @@ export default function BookingForm() {
                       aria-pressed={isSelected}
                       onClick={() => {
                         if (isTaken) return;
-                        setTime(t);
+                        setTime(t); // np. "20:30" — pokazujemy 1:1 na przycisku
                         setErrMsg("");
                         setTimePickerOpen(false);
                       }}
@@ -287,31 +292,30 @@ export default function BookingForm() {
               <label className={labelCls}>E-mail *</label>
               <input type="email" className={inputCls} value={email} onChange={(e) => setEmail(e.target.value)} required />
             </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className={labelCls}>Data *</label>
-                <input type="date" className={inputCls} value={date} min={todayStr} onChange={(e) => setDate(e.target.value)} required />
+                <input
+                  type="date"
+                  className={inputCls}
+                  value={date}
+                  min={todayStr}
+                  onChange={(e) => setDate(e.target.value)}
+                  required
+                />
               </div>
               <div>
                 <label className={labelCls}>Godzina *</label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    className={`${inputCls} bg-gray-50`}
-                    value={time || ""}
-                    placeholder="Nie wybrano"
-                    readOnly
-                  />
-                  <button
-                    type="button"
-                    className={btnCls}
-                    onClick={() => setTimePickerOpen(true)}
-                    disabled={!date}
-                    title={date ? "Wybierz godzinę" : "Najpierw wybierz datę"}
-                  >
-                    Wybierz godzinę
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  className={`${btnCls} w-full`}
+                  onClick={() => setTimePickerOpen(true)}
+                  disabled={!date}
+                  title={date ? "Wybierz godzinę" : "Najpierw wybierz datę"}
+                >
+                  {time ? time : "Wybierz godzinę"}
+                </button>
               </div>
             </div>
           </div>
@@ -320,14 +324,18 @@ export default function BookingForm() {
         {/* Sekcja: Szczegóły wizyty */}
         <section>
           <h2 className="text-lg font-semibold mb-3">Szczegóły wizyty</h2>
+
+          {/* 1) Szerokie pole: rodzaj wizyty */}
+          <div className="mb-4">
+            <label className={labelCls}>Rodzaj wizyty *</label>
+            <select className={inputCls} value={visitType} onChange={(e) => setVisitType(e.target.value as VisitType)} required>
+              <option value="Teleporada">Teleporada — 49 zł</option>
+              <option value="Wizyta domowa">Wizyta domowa — 350 zł</option>
+            </select>
+          </div>
+
+          {/* 2) Dwa pola obok siebie: lekarz + PESEL (+ mały checkbox pod PESEL) */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className={labelCls}>Rodzaj wizyty *</label>
-              <select className={inputCls} value={visitType} onChange={(e) => setVisitType(e.target.value as VisitType)} required>
-                <option value="Teleporada">Teleporada — 49 zł</option>
-                <option value="Wizyta domowa">Wizyta domowa — 350 zł</option>
-              </select>
-            </div>
             <div>
               <label className={labelCls}>Lekarz *</label>
               <select className={inputCls} value={doctor} onChange={(e) => setDoctor(e.target.value)} required>
@@ -338,18 +346,64 @@ export default function BookingForm() {
                 ))}
               </select>
             </div>
+
+            <div>
+              <label className={labelCls}>PESEL {noPesel ? "(pominięty)" : "*"}</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={11}
+                className={`${inputCls} ${noPesel ? "bg-gray-100" : ""}`}
+                value={pesel}
+                onChange={(e) => setPesel(e.target.value.replace(/\D/g, "").slice(0, 11))}
+                disabled={noPesel}
+                required={!noPesel}
+              />
+              <label className="mt-1 inline-flex items-center gap-2 text-xs text-gray-700">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={noPesel}
+                  onChange={(e) => {
+                    setNoPesel(e.target.checked);
+                    if (e.target.checked) setPesel("");
+                  }}
+                />
+                Nie mam numeru PESEL
+              </label>
+            </div>
           </div>
 
-          {/* Adres wizyty domowej – tylko przy wizycie domowej */}
+          {/* 3) Dodatkowe pola dla wizyty domowej */}
           {visitType === "Wizyta domowa" && (
-            <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="md:col-span-2">
-                <label className={labelCls}>Ulica i numer *</label>
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div>
+                <label className={labelCls}>Miejscowość *</label>
                 <input
                   type="text"
                   className={inputCls}
-                  value={addressLine1}
-                  onChange={(e) => setAddressLine1(e.target.value)}
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Ulica *</label>
+                <input
+                  type="text"
+                  className={inputCls}
+                  value={street}
+                  onChange={(e) => setStreet(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Numer domu *</label>
+                <input
+                  type="text"
+                  className={inputCls}
+                  value={houseNumber}
+                  onChange={(e) => setHouseNumber(e.target.value)}
                   required
                 />
               </div>
@@ -366,61 +420,18 @@ export default function BookingForm() {
                   required
                 />
               </div>
-              <div className="md:col-span-1">
-                <label className={labelCls}>Miasto *</label>
-                <input
-                  type="text"
-                  className={inputCls}
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                  required
-                />
-              </div>
             </div>
           )}
         </section>
 
-        {/* Dół: po lewej cena + CTA, po prawej PESEL */}
-        <section className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start pt-2">
-          <div className="flex items-center justify-between">
-            <div className="text-lg">
-              <span className="text-gray-600">Do zapłaty:</span> <strong>{price} zł</strong>
-            </div>
-            <button type="submit" className="btn btn-primary" disabled={loading}>
-              {loading ? "Rezerwuję…" : visitType === "Teleporada" ? "Umów teleporadę" : "Umów wizytę domową"}
-            </button>
+        {/* Dół: cena + CTA pod wszystkimi polami */}
+        <section className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2">
+          <div className="text-lg">
+            <span className="text-gray-600">Do zapłaty:</span> <strong>{price} zł</strong>
           </div>
-
-          {/* 🔽 PRAWY DOLNY RÓG: PESEL */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="sm:col-span-2">
-              <label className={labelCls}>PESEL {noPesel ? "(pominięty)" : "*"}</label>
-              <input
-                type="text"
-                inputMode="numeric"
-                maxLength={11}
-                className={`${inputCls} ${noPesel ? "bg-gray-100" : ""}`}
-                value={pesel}
-                onChange={(e) => setPesel(e.target.value.replace(/\D/g, "").slice(0, 11))}
-                disabled={noPesel}
-                required={!noPesel}
-              />
-            </div>
-            <div className="flex items-end">
-              <label className="inline-flex items-center gap-2 text-sm text-gray-700">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4"
-                  checked={noPesel}
-                  onChange={(e) => {
-                    setNoPesel(e.target.checked);
-                    if (e.target.checked) setPesel("");
-                  }}
-                />
-                Nie mam numeru PESEL
-              </label>
-            </div>
-          </div>
+          <button type="submit" className="btn btn-primary h-12" disabled={loading}>
+            {loading ? "Rezerwuję…" : "Umów wizytę"}
+          </button>
         </section>
       </form>
     </>
