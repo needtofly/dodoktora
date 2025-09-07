@@ -7,18 +7,19 @@ const BASE = isSandbox
   ? "https://sandbox.przelewy24.pl"
   : "https://secure.przelewy24.pl";
 
+// UŻYWAJ merchantId do Basic Auth (login), NIE posId
 const merchantId = Number(process.env.P24_MERCHANT_ID || 0);
-const posId = Number(process.env.P24_POS_ID || 0);
-const crc = process.env.P24_CRC || "";
-const apiKey = process.env.P24_REST_API_KEY || "";
+const posId = Number(process.env.P24_POS_ID || 0); // dalej potrzebny w payload
+const crc = (process.env.P24_CRC || "").trim();
+const apiKey = (process.env.P24_REST_API_KEY || "").trim();
 
 function authHeader() {
-  // Basic base64(posId:apiKey)
-  const token = Buffer.from(`${posId}:${apiKey}`).toString("base64");
+  // Basic base64(merchantId:apiKey)  ← kluczowa zmiana
+  const token = Buffer.from(`${merchantId}:${apiKey}`).toString("base64");
   return `Basic ${token}`;
 }
 
-// SHA-384( JSON.stringify(obj) )
+// SHA-384(JSON.stringify(obj))
 function sha384Of(obj: Record<string, any>) {
   const json = JSON.stringify(obj);
   return crypto.createHash("sha384").update(json).digest("hex");
@@ -64,7 +65,6 @@ export async function p24Register(opts: {
     urlReturn,
     urlStatus,
     sign,
-    // opcjonalnie można dodać 'channel', 'timeLimit', itd.
   };
 
   const res = await fetch(`${BASE}/api/v1/transaction/register`, {
@@ -79,11 +79,16 @@ export async function p24Register(opts: {
   const data = await res.json().catch(() => ({} as any));
   if (!res.ok || !data?.data?.token) {
     const msg = data?.error || data?.message || `P24 register HTTP ${res.status}`;
+    // pomocny log przy 401
+    if (res.status === 401) {
+      console.error("[P24] 401 Incorrect authentication. Upewnij się, że Authorization=Basic base64(merchantId:apiKey).", {
+        merchantId, posId, hasApiKey: !!apiKey
+      });
+    }
     throw new Error(msg);
   }
 
   const token: string = data.data.token;
-  // Link do przekierowania (sandbox / prod)
   const redirectUrl = `${BASE}/trnRequest/${token}`;
   return { token, redirectUrl };
 }
@@ -130,11 +135,10 @@ export async function p24Verify(opts: {
     const msg = data?.error || data?.message || `P24 verify HTTP ${res.status}`;
     throw new Error(msg);
   }
-  // w dok. ok==true oznacza poprawną weryfikację
   return true;
 }
 
-/** Walidacja podpisu z webhooka (notify) – porównujemy sign */
+/** Walidacja podpisu z webhooka (notify) */
 export function p24ValidateWebhookSign(body: {
   sessionId: string;
   orderId: number;
