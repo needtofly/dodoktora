@@ -1,31 +1,37 @@
 // middleware.ts
-import type { NextRequest } from 'next/server'
-import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server';
+import { NextResponse } from 'next/server';
 
 export function middleware(req: NextRequest) {
-  const { pathname } = req.nextUrl
-  const auth = req.cookies.get('admin_auth')?.value
+  const { pathname, search } = req.nextUrl;
+  const isAdminPage = pathname.startsWith('/admin');
+  const isAdminApi = pathname.startsWith('/api/admin');
 
-  // Ochrona panelu /admin (poza /admin/login)
-  if (pathname.startsWith('/admin') && !pathname.startsWith('/admin/login')) {
-    if (auth !== 'ok') {
-      const url = req.nextUrl.clone()
-      url.pathname = '/admin/login'
-      url.searchParams.set('next', pathname)
-      return NextResponse.redirect(url)
-    }
+  // pozwól na stronę logowania
+  if (isAdminPage && pathname.startsWith('/admin/login')) {
+    return NextResponse.next();
   }
 
-  // Ochrona API admina
-  if (pathname.startsWith('/api/admin')) {
-    if (auth !== 'ok') {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+  // sprawdź cookie
+  const auth = req.cookies.get('admin')?.value === '1';
+
+  if (isAdminPage) {
+    if (auth) return NextResponse.next();
+    const url = req.nextUrl.clone();
+    url.pathname = '/admin/login';
+    // zapamiętaj dokąd wrócić po zalogowaniu
+    if (pathname !== '/admin') url.searchParams.set('next', pathname + (search || ''));
+    return NextResponse.redirect(url);
   }
 
-  return NextResponse.next()
+  if (isAdminApi) {
+    if (auth) return NextResponse.next();
+    return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+  }
+
+  return NextResponse.next();
 }
 
 export const config = {
   matcher: ['/admin/:path*', '/api/admin/:path*'],
-}
+};
