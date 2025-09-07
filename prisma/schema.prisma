@@ -10,26 +10,47 @@ datasource db {
 }
 
 model Booking {
+  // --- identyfikatory i czasy ---
   id          String   @id @default(uuid())
-  fullName    String
-  email       String
-  phone       String
-  visitType   String
-  doctor      String?          // opcjonalne, żeby UI/API nie sypały się gdy brak lekarza
-  date        DateTime
-  notes       String?
-  address     String?
-  pesel       String?
-  noPesel     Boolean  @default(false)
-
-  // ✅ spójne z panelem / API
-  priceCents  Int      @default(0)   // zamiast wcześniejszego "amount"
-  currency    String   @default("PLN")
-  status      String   @default("PENDING")
-  realized    Boolean  @default(false)
-
   createdAt   DateTime @default(now())
   updatedAt   DateTime @default(now()) @updatedAt
 
+  // --- dane pacjenta ---
+  fullName    String
+  email       String
+  phone       String
+  pesel       String?  @db.VarChar(11)
+  noPesel     Boolean  @default(false)
+
+  // --- rodzaj wizyty i lekarz ---
+  visitType   String   @default("TELEPORADA") // TELEPORADA | WIZYTA_DOMOWA (walidujemy w UI/API)
+  doctor      String?  // opcjonalne
+
+  // --- termin i notatki ---
+  date        DateTime
+  notes       String?
+
+  // --- adres: pozostawiamy stare 'address' + dokładniejsze pola ---
+  address         String?
+  addressLine1    String?
+  addressLine2    String?
+  city            String?
+  postalCode      String?
+
+  // --- płatności ---
+  priceCents   Int      @default(0)
+  currency     String   @default("PLN")
+  paymentStatus String  @default("UNPAID")   // UNPAID | PAID | REFUNDED
+  paymentRef    String?                     // numer/ID transakcji (np. z P24)
+
+  // --- status realizacji ---
+  status       String   @default("PENDING")  // PENDING | CONFIRMED | COMPLETED | CANCELLED
+  realized     Boolean  @default(false)      // dla zgodności ze starszym UI (można wycofać później)
+  completedAt  DateTime?
+
   @@index([date])
+  @@index([createdAt])
+  @@index([visitType])
+  @@index([status])
+  @@index([paymentStatus])
 }
