@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     siteName: "dodoktora.co",
     images: [
       {
-        url: "/icon-512-maskable.png?v=4",
+        url: "/icon-512-maskable.png?v=7",
         width: 512,
         height: 512,
         alt: "dodoktora.co logo",
@@ -28,15 +28,14 @@ export const metadata: Metadata = {
     locale: "pl_PL",
     type: "website",
   },
+  // Favikony — wymuszamy PNG 32/16 jako ikonę zakładki, bez .ico
   icons: {
     icon: [
-      { url: "/favicon.ico?v=4" },
-      { url: "/favicon-32.png?v=4", type: "image/png", sizes: "32x32" },
-      { url: "/favicon-16.png?v=4", type: "image/png", sizes: "16x16" },
+      { url: "/favicon-32.png?v=7", type: "image/png", sizes: "32x32" },
+      { url: "/favicon-16.png?v=7", type: "image/png", sizes: "16x16" },
     ],
-    shortcut: "/favicon.ico?v=4",
-    apple: [{ url: "/apple-touch-icon.png?v=4", sizes: "180x180" }],
-    other: [{ rel: "mask-icon", url: "/icon-maskable-512.png?v=4" }],
+    apple: [{ url: "/apple-touch-icon.png?v=7", sizes: "180x180" }],
+    other: [{ rel: "mask-icon", url: "/icon-maskable-512.png?v=7" }],
   },
 };
 
