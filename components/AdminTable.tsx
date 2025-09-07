@@ -2,7 +2,6 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 
 type VisitType = 'TELEPORADA' | 'WIZYTA_DOMOWA';
 type PaymentStatus = 'UNPAID' | 'PAID' | 'REFUNDED';
@@ -11,33 +10,55 @@ type BookingStatus = 'PENDING' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED';
 export type Booking = {
   id: string;
   createdAt: string;
-  appointmentAt?: string | null;
+  // ⬇️ w Twojej bazie pole z terminem to "date"
+  date: string;
+
   fullName?: string | null;
   email?: string | null;
   phone?: string | null;
   pesel?: string | null;
-  visitType: VisitType;
+
+  visitType: VisitType | string;
+
+  // stary jednolinijkowy adres
+  address?: string | null;
+
+  // nowe, rozbite pola adresu (mogą nie być ustawione)
   addressLine1?: string | null;
   addressLine2?: string | null;
   city?: string | null;
   postalCode?: string | null;
-  status: BookingStatus;
+
+  status: BookingStatus | string;
   completedAt?: string | null;
-  paymentStatus: PaymentStatus;
+
+  paymentStatus: PaymentStatus | string;
   paymentRef?: string | null;
   priceCents?: number | null;
 };
 
-function fmtDate(d?: string | null) {
-  if (!d) return '—';
-  const dt = new Date(d);
-  return dt.toLocaleString();
+function fmtDateTime(iso?: string | null) {
+  if (!iso) return '—';
+  const dt = new Date(iso);
+  // Prezentacja w lokalnym formacie (PL) z godziną
+  return dt.toLocaleString('pl-PL', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function pickAddressParts(b: Booking) {
+  const parts = [b.addressLine1, b.addressLine2, b.postalCode, b.city].filter(Boolean) as string[];
+  return parts.length ? parts.join(', ') : null;
 }
 
 function addressOf(b: Booking) {
-  if (b.visitType !== 'WIZYTA_DOMOWA') return '—';
-  const parts = [b.addressLine1, b.addressLine2, b.postalCode, b.city].filter(Boolean);
-  return parts.length ? parts.join(', ') : '—';
+  if ((b.visitType as string).toUpperCase?.() !== 'WIZYTA_DOMOWA') return '—';
+  // najpierw rozbite pola, jeśli puste – fallback do starego "address"
+  return pickAddressParts(b) || (b.address || '—');
 }
 
 export default function AdminTable() {
@@ -46,9 +67,9 @@ export default function AdminTable() {
   const [err, setErr] = useState<string | null>(null);
 
   const [q, setQ] = useState('');
-  const [status, setStatus] = useState<'' | BookingStatus>('');
-  const [paymentStatus, setPaymentStatus] = useState<'' | PaymentStatus>('');
-  const [visitType, setVisitType] = useState<'' | VisitType>('');
+  const [status, setStatus] = useState<string>('');
+  const [paymentStatus, setPaymentStatus] = useState<string>('');
+  const [visitType, setVisitType] = useState<string>('');
 
   const load = async () => {
     setLoading(true);
@@ -88,10 +109,12 @@ export default function AdminTable() {
       alert(data?.error || `Nie udało się zaktualizować (HTTP ${res.status})`);
       return;
     }
-    setList((prev) => prev.map((b) => (b.id === id ? { ...b, status: 'COMPLETED', completedAt: new Date().toISOString() } : b)));
+    setList((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, status: 'COMPLETED', completedAt: new Date().toISOString() } : b)),
+    );
   };
 
-  const updatePayment = async (id: string, newStatus: PaymentStatus, newRef: string) => {
+  const updatePayment = async (id: string, newStatus: PaymentStatus | string, newRef: string) => {
     const res = await fetch(`/api/admin/bookings/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
@@ -130,30 +153,36 @@ export default function AdminTable() {
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && load()}
         />
-        <select className="border rounded px-3 py-2" value={status} onChange={(e) => setStatus(e.target.value as any)}>
+        <select className="border rounded px-3 py-2" value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">Status wizyty (wszystkie)</option>
           <option value="PENDING">PENDING</option>
           <option value="CONFIRMED">CONFIRMED</option>
           <option value="COMPLETED">COMPLETED</option>
           <option value="CANCELLED">CANCELLED</option>
         </select>
-        <select className="border rounded px-3 py-2" value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value as any)}>
+        <select className="border rounded px-3 py-2" value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value)}>
           <option value="">Status płatności (wszystkie)</option>
           <option value="UNPAID">UNPAID</option>
           <option value="PAID">PAID</option>
           <option value="REFUNDED">REFUNDED</option>
         </select>
-        <select className="border rounded px-3 py-2" value={visitType} onChange={(e) => setVisitType(e.target.value as any)}>
+        <select className="border rounded px-3 py-2" value={visitType} onChange={(e) => setVisitType(e.target.value)}>
           <option value="">Typ wizyty (wszystkie)</option>
           <option value="TELEPORADA">TELEPORADA</option>
           <option value="WIZYTA_DOMOWA">WIZYTA DOMOWA</option>
         </select>
         <div className="md:col-span-4 flex gap-2">
-          <button className="px-4 py-2 rounded bg-black text-white" onClick={load}>Filtruj</button>
+          <button className="px-4 py-2 rounded bg-black text-white" onClick={load}>
+            Filtruj
+          </button>
           <button
             className="px-4 py-2 rounded border"
             onClick={() => {
-              setQ(''); setStatus(''); setPaymentStatus(''); setVisitType(''); load();
+              setQ('');
+              setStatus('');
+              setPaymentStatus('');
+              setVisitType('');
+              load();
             }}
           >
             Wyczyść
@@ -163,7 +192,6 @@ export default function AdminTable() {
 
       {err && <p className="text-red-600">{err}</p>}
       {loading && <p>Ładowanie…</p>}
-
       {!loading && !filtered.length && <p>Brak rezerwacji.</p>}
 
       {!!filtered.length && (
@@ -186,31 +214,29 @@ export default function AdminTable() {
             <tbody>
               {filtered.map((b) => (
                 <tr key={b.id} className="odd:bg-white even:bg-gray-50 align-top">
-                  <td className="p-2 border whitespace-nowrap">{fmtDate(b.createdAt)}</td>
-                  <td className="p-2 border whitespace-nowrap">
-                    {fmtDate(b.appointmentAt)}
-                  </td>
+                  <td className="p-2 border whitespace-nowrap">{fmtDateTime(b.createdAt)}</td>
+                  <td className="p-2 border whitespace-nowrap">{fmtDateTime(b.date)}</td>
                   <td className="p-2 border">
                     <div className="font-medium">{b.fullName || '—'}</div>
                     <div className="text-xs text-gray-500">#{b.id}</div>
                   </td>
                   <td className="p-2 border">{b.pesel || '—'}</td>
-                  <td className="p-2 border">{b.visitType}</td>
+                  <td className="p-2 border">{(b.visitType as string) || '—'}</td>
                   <td className="p-2 border">{addressOf(b)}</td>
                   <td className="p-2 border">
                     <div>{b.phone || '—'}</div>
                     <div className="text-xs text-gray-600">{b.email || '—'}</div>
                   </td>
                   <td className="p-2 border">
-                    <div>{b.status}</div>
-                    {b.completedAt && <div className="text-xs text-gray-600">({fmtDate(b.completedAt)})</div>}
+                    <div>{(b.status as string) || '—'}</div>
+                    {b.completedAt && <div className="text-xs text-gray-600">({fmtDateTime(b.completedAt)})</div>}
                   </td>
                   <td className="p-2 border">
                     <div className="flex flex-col gap-1">
                       <select
                         className="border rounded px-2 py-1"
-                        defaultValue={b.paymentStatus}
-                        onChange={(e) => updatePayment(b.id, e.target.value as PaymentStatus, b.paymentRef || '')}
+                        defaultValue={(b.paymentStatus as string) || 'UNPAID'}
+                        onChange={(e) => updatePayment(b.id, e.target.value, b.paymentRef || '')}
                       >
                         <option value="UNPAID">UNPAID</option>
                         <option value="PAID">PAID</option>
@@ -220,24 +246,18 @@ export default function AdminTable() {
                         className="border rounded px-2 py-1"
                         placeholder="Numer transakcji (P24)"
                         defaultValue={b.paymentRef || ''}
-                        onBlur={(e) => updatePayment(b.id, b.paymentStatus, e.currentTarget.value)}
+                        onBlur={(e) => updatePayment(b.id, (b.paymentStatus as string) || 'UNPAID', e.currentTarget.value)}
                       />
                     </div>
                   </td>
                   <td className="p-2 border">
                     <div className="flex flex-wrap gap-2">
-                      {b.status !== 'COMPLETED' && (
-                        <button
-                          className="px-3 py-1 rounded bg-green-600 text-white"
-                          onClick={() => markCompleted(b.id)}
-                        >
+                      {(b.status as string) !== 'COMPLETED' && (
+                        <button className="px-3 py-1 rounded bg-green-600 text-white" onClick={() => markCompleted(b.id)}>
                           Zrealizowana
                         </button>
                       )}
-                      <button
-                        className="px-3 py-1 rounded bg-red-600 text-white"
-                        onClick={() => removeBooking(b.id)}
-                      >
+                      <button className="px-3 py-1 rounded bg-red-600 text-white" onClick={() => removeBooking(b.id)}>
                         Usuń
                       </button>
                     </div>
