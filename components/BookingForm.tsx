@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect, useCallback } from "react";
+import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 
 type VisitType = "Teleporada" | "Wizyta domowa";
@@ -64,16 +64,18 @@ export default function BookingForm() {
   const [doctor, setDoctor] = useState<string>(urlDoctor || DOCTORS[0]);
 
   // rozbite pola adresu dla wizyty domowej
-  const [city, setCity] = useState("");         // Miejscowość
-  const [street, setStreet] = useState("");     // Ulica
+  const [city, setCity] = useState("");               // Miejscowość
+  const [street, setStreet] = useState("");           // Ulica
   const [houseNumber, setHouseNumber] = useState(""); // Numer domu
   const [postalCode, setPostalCode] = useState("");   // 00-000
 
   const [loading, setLoading] = useState(false);
   const [errMsg, setErrMsg] = useState<string>("");
 
-  // Modal wyboru godziny
+  // Modal wyboru godziny + chmurka „Najpierw wybierz datę”
   const [timePickerOpen, setTimePickerOpen] = useState(false);
+  const [showDateTip, setShowDateTip] = useState(false);
+  const tipTimerRef = useRef<number | null>(null);
 
   const today = new Date();
   const todayStr = localDateStr(today);
@@ -149,14 +151,14 @@ export default function BookingForm() {
     setLoading(true);
 
     try {
-      // ISO liczone z lokalnego czasu -> serwer zapisze UTC, ale odpowiadające lokalnie wybranej godzinie
+      // ISO liczone z lokalnego czasu
       const iso = localDateTimeToISO(date, time);
 
-      // addressLine1 składamy z ulicy i numeru domu
+      // addressLine1 ze „Ulica + numer”
       const addressLine1 =
         visitType === "Wizyta domowa" ? `${street.trim()} ${houseNumber.trim()}` : undefined;
 
-      // Legacy złożony adres — jeśli gdzieś jeszcze używasz jednego stringa
+      // legacy złożony adres – jeśli gdzieś jeszcze używasz jednego stringa
       const addressCombined =
         visitType === "Wizyta domowa"
           ? `${street.trim()} ${houseNumber.trim()}, ${postalCode.trim()} ${city.trim()}`
@@ -173,7 +175,7 @@ export default function BookingForm() {
           visitType,
           doctor,
           date: iso,
-          // adres — nowe rozbite pola + legacy
+          // adres – nowe rozbite pola + legacy
           city: visitType === "Wizyta domowa" ? city.trim() : undefined,
           postalCode: visitType === "Wizyta domowa" ? postalCode.trim() : undefined,
           addressLine1,
@@ -212,6 +214,23 @@ export default function BookingForm() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [timePickerOpen, onKeyDown]);
 
+  // klik w „Wybierz godzinę”
+  const onTimeButtonClick = () => {
+    if (!date) {
+      setShowDateTip(true);
+      if (tipTimerRef.current) window.clearTimeout(tipTimerRef.current);
+      tipTimerRef.current = window.setTimeout(() => setShowDateTip(false), 2000);
+      return;
+    }
+    setTimePickerOpen(true);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (tipTimerRef.current) window.clearTimeout(tipTimerRef.current);
+    };
+  }, []);
+
   return (
     <>
       {/* MODAL WYBORU GODZINY */}
@@ -243,7 +262,7 @@ export default function BookingForm() {
                       aria-pressed={isSelected}
                       onClick={() => {
                         if (isTaken) return;
-                        setTime(t); // np. "20:30" — pokazujemy 1:1 na przycisku
+                        setTime(t); // np. "20:30"
                         setErrMsg("");
                         setTimePickerOpen(false);
                       }}
@@ -305,17 +324,25 @@ export default function BookingForm() {
                   required
                 />
               </div>
-              <div>
+              <div className="relative">
                 <label className={labelCls}>Godzina *</label>
                 <button
                   type="button"
                   className={`${btnCls} w-full`}
-                  onClick={() => setTimePickerOpen(true)}
-                  disabled={!date}
-                  title={date ? "Wybierz godzinę" : "Najpierw wybierz datę"}
+                  onClick={onTimeButtonClick}
                 >
                   {time ? time : "Wybierz godzinę"}
                 </button>
+
+                {/* Chmurka „Najpierw wybierz datę.” */}
+                {showDateTip && (
+                  <div className="absolute left-1/2 -translate-x-1/2 top-[calc(100%+0.5rem)] z-20">
+                    <div className="relative rounded-lg bg-black text-white text-xs px-3 py-2 shadow-lg" role="alert" aria-live="polite">
+                      Najpierw wybierz datę.
+                      <span className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-black" />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -334,7 +361,7 @@ export default function BookingForm() {
             </select>
           </div>
 
-          {/* 2) Dwa pola obok siebie: lekarz + PESEL (+ mały checkbox pod PESEL) */}
+          {/* 2) Dwa pola obok siebie: Lekarz + PESEL (checkbox pod PESEL) */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className={labelCls}>Lekarz *</label>
@@ -424,14 +451,20 @@ export default function BookingForm() {
           )}
         </section>
 
-        {/* Dół: cena + CTA pod wszystkimi polami */}
-        <section className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2">
-          <div className="text-lg">
+        {/* Dół: cena + CTA — przycisk wycentrowany i szerszy (lepsza konwersja) */}
+        <section className="grid grid-cols-1 sm:grid-cols-3 items-center gap-4 pt-2">
+          <div className="sm:col-span-1 text-lg">
             <span className="text-gray-600">Do zapłaty:</span> <strong>{price} zł</strong>
           </div>
-          <button type="submit" className="btn btn-primary h-12" disabled={loading}>
-            {loading ? "Rezerwuję…" : "Umów wizytę"}
-          </button>
+          <div className="sm:col-span-2 flex justify-center">
+            <button
+              type="submit"
+              className="btn btn-primary h-12 w-full sm:w-auto min-w-[240px] px-8 text-base shadow-md"
+              disabled={loading}
+            >
+              {loading ? "Rezerwuję…" : "Umów wizytę"}
+            </button>
+          </div>
         </section>
       </form>
     </>
