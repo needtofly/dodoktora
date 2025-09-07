@@ -38,3 +38,14 @@ logs
 .env
 .env.local
 .env.production
+.env
+.env.local
+.env.production
+.env.example
+.env*
+**/.env
+**/.env*
+.env
+.env.*
+**/.env
+**/.env.*
