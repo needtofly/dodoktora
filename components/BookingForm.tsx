@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 
 type VisitType = "Teleporada" | "Wizyta domowa";
@@ -71,6 +71,9 @@ export default function BookingForm() {
   const [loading, setLoading] = useState(false);
   const [errMsg, setErrMsg] = useState<string>("");
 
+  // Modal wyboru godziny
+  const [timePickerOpen, setTimePickerOpen] = useState(false);
+
   const today = new Date();
   const todayStr = localDateStr(today);
 
@@ -90,7 +93,7 @@ export default function BookingForm() {
       .catch(() => {});
   }, [date]);
 
-  // Lista slotów do pokazania (bez przeszłości, ale NIE filtrujemy "taken" – pokażemy je jako wyszarzone)
+  // Lista slotów do pokazania (bez przeszłości; zajęte pokażemy jako disabled)
   const displaySlots = useMemo(() => {
     if (!date) return ALL_SLOTS;
     let slots = [...ALL_SLOTS];
@@ -191,111 +194,165 @@ export default function BookingForm() {
   const inputCls =
     "w-full h-12 px-4 text-base rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500";
   const labelCls = "label text-sm font-medium text-gray-700";
+  const btnCls =
+    "px-4 h-12 inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white hover:bg-blue-50 focus:ring-2 focus:ring-blue-500/40";
+
+  // zamknij modal ESC
+  const onKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.key === "Escape") setTimePickerOpen(false);
+  }, []);
+  useEffect(() => {
+    if (!timePickerOpen) return;
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [timePickerOpen, onKeyDown]);
 
   return (
-    <form onSubmit={submit} className="bg-white p-6 rounded-2xl border shadow-sm space-y-6">
-      {errMsg && (
-        <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-red-700 text-sm" role="alert">
-          {errMsg}
+    <>
+      {/* MODAL WYBORU GODZINY */}
+      {timePickerOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Wybór godziny"
+        >
+          <div className="absolute inset-0 bg-black/40" onClick={() => setTimePickerOpen(false)} />
+          <div className="relative z-10 w-[min(900px,94vw)] max-h-[86vh] overflow-auto rounded-2xl bg-white shadow-xl border p-4 sm:p-6">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-semibold">Wybierz godzinę {date ? `— ${date}` : ""}</h3>
+              <button className={btnCls} onClick={() => setTimePickerOpen(false)}>Zamknij</button>
+            </div>
+
+            {!date ? (
+              <div className="p-4 text-sm text-gray-600">Najpierw wybierz datę w formularzu.</div>
+            ) : (
+              <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-8 gap-2">
+                {displaySlots.map((t) => {
+                  const isTaken = takenSlots.includes(t);
+                  const isSelected = time === t;
+                  return (
+                    <button
+                      type="button"
+                      key={t}
+                      aria-pressed={isSelected}
+                      onClick={() => {
+                        if (isTaken) return;
+                        setTime(t);
+                        setErrMsg("");
+                        setTimePickerOpen(false);
+                      }}
+                      className={[
+                        "h-10 rounded-lg border text-sm",
+                        isTaken
+                          ? "bg-gray-100 text-gray-400 line-through cursor-not-allowed"
+                          : isSelected
+                          ? "bg-blue-600 text-white border-blue-600"
+                          : "bg-white hover:bg-blue-50 border-gray-300",
+                      ].join(" ")}
+                      title={isTaken ? "Termin zajęty" : "Dostępny termin"}
+                      disabled={isTaken}
+                    >
+                      {t}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      {/* Dane pacjenta */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className={labelCls}>Imię i nazwisko *</label>
-          <input type="text" className={inputCls} value={fullName} onChange={(e) => setFullName(e.target.value)} required />
-        </div>
-        <div>
-          <label className={labelCls}>Telefon *</label>
-          <input type="tel" className={inputCls} value={phone} onChange={(e) => setPhone(e.target.value)} required />
-        </div>
-      </div>
+      {/* FORMULARZ */}
+      <form onSubmit={submit} className="bg-white p-6 rounded-2xl border shadow-sm space-y-8">
+        {errMsg && (
+          <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-red-700 text-sm" role="alert">
+            {errMsg}
+          </div>
+        )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className={labelCls}>E-mail *</label>
-          <input type="email" className={inputCls} value={email} onChange={(e) => setEmail(e.target.value)} required />
-        </div>
-        <div>
-          <label className={labelCls}>Data *</label>
-          <input type="date" className={inputCls} value={date} min={todayStr} onChange={(e) => setDate(e.target.value)} required />
-        </div>
-      </div>
-
-      {/* Godzina (siatka) i typ wizyty */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className={labelCls}>Godzina *</label>
-
-          {!date ? (
-            <div className="text-sm text-gray-500 h-12 flex items-center">Najpierw wybierz datę.</div>
-          ) : (
-            <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-8 gap-2">
-              {displaySlots.map((t) => {
-                const isTaken = takenSlots.includes(t);
-                const isSelected = time === t;
-                return (
+        {/* Sekcja: Dane pacjenta */}
+        <section>
+          <h2 className="text-lg font-semibold mb-3">Dane pacjenta</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className={labelCls}>Imię i nazwisko *</label>
+              <input type="text" className={inputCls} value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+            </div>
+            <div>
+              <label className={labelCls}>Telefon *</label>
+              <input type="tel" className={inputCls} value={phone} onChange={(e) => setPhone(e.target.value)} required />
+            </div>
+            <div>
+              <label className={labelCls}>E-mail *</label>
+              <input type="email" className={inputCls} value={email} onChange={(e) => setEmail(e.target.value)} required />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={labelCls}>Data *</label>
+                <input type="date" className={inputCls} value={date} min={todayStr} onChange={(e) => setDate(e.target.value)} required />
+              </div>
+              <div>
+                <label className={labelCls}>Godzina *</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    className={`${inputCls} bg-gray-50`}
+                    value={time || ""}
+                    placeholder="Nie wybrano"
+                    readOnly
+                  />
                   <button
                     type="button"
-                    key={t}
-                    aria-pressed={isSelected}
-                    onClick={() => !isTaken && setTime(t)}
-                    className={[
-                      "h-10 rounded-lg border text-sm",
-                      isTaken
-                        ? "bg-gray-100 text-gray-400 line-through cursor-not-allowed"
-                        : isSelected
-                        ? "bg-blue-600 text-white border-blue-600"
-                        : "bg-white hover:bg-blue-50 border-gray-300",
-                    ].join(" ")}
-                    title={isTaken ? "Termin zajęty" : "Dostępny termin"}
-                    disabled={isTaken}
+                    className={btnCls}
+                    onClick={() => setTimePickerOpen(true)}
+                    disabled={!date}
+                    title={date ? "Wybierz godzinę" : "Najpierw wybierz datę"}
                   >
-                    {t}
+                    Wybierz godzinę
                   </button>
-                );
-              })}
+                </div>
+              </div>
             </div>
-          )}
-        </div>
+          </div>
+        </section>
 
-        <div>
-          <label className={labelCls}>Rodzaj wizyty *</label>
-          <select className={inputCls} value={visitType} onChange={(e) => setVisitType(e.target.value as VisitType)} required>
-            <option value="Teleporada">Teleporada — 49 zł</option>
-            <option value="Wizyta domowa">Wizyta domowa — 350 zł</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Lekarz */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className={labelCls}>Lekarz *</label>
-          <select className={inputCls} value={doctor} onChange={(e) => setDoctor(e.target.value)} required>
-            {DOCTORS.map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Adres wizyty domowej – widoczny TYLKO dla wizyty domowej */}
-        {visitType === "Wizyta domowa" && (
-          <div className="grid grid-cols-1 gap-4">
+        {/* Sekcja: Szczegóły wizyty */}
+        <section>
+          <h2 className="text-lg font-semibold mb-3">Szczegóły wizyty</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className={labelCls}>Ulica i numer *</label>
-              <input
-                type="text"
-                className={inputCls}
-                value={addressLine1}
-                onChange={(e) => setAddressLine1(e.target.value)}
-                required
-              />
+              <label className={labelCls}>Rodzaj wizyty *</label>
+              <select className={inputCls} value={visitType} onChange={(e) => setVisitType(e.target.value as VisitType)} required>
+                <option value="Teleporada">Teleporada — 49 zł</option>
+                <option value="Wizyta domowa">Wizyta domowa — 350 zł</option>
+              </select>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className={labelCls}>Lekarz *</label>
+              <select className={inputCls} value={doctor} onChange={(e) => setDoctor(e.target.value)} required>
+                {DOCTORS.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Adres wizyty domowej – tylko przy wizycie domowej */}
+          {visitType === "Wizyta domowa" && (
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="md:col-span-2">
+                <label className={labelCls}>Ulica i numer *</label>
+                <input
+                  type="text"
+                  className={inputCls}
+                  value={addressLine1}
+                  onChange={(e) => setAddressLine1(e.target.value)}
+                  required
+                />
+              </div>
               <div>
                 <label className={labelCls}>Kod pocztowy *</label>
                 <input
@@ -309,7 +366,7 @@ export default function BookingForm() {
                   required
                 />
               </div>
-              <div>
+              <div className="md:col-span-1">
                 <label className={labelCls}>Miasto *</label>
                 <input
                   type="text"
@@ -320,52 +377,52 @@ export default function BookingForm() {
                 />
               </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </section>
 
-      {/* Dół: po lewej cena + CTA, po prawej PESEL */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start pt-4">
-        <div className="flex items-center justify-between">
-          <div className="text-lg">
-            <span className="text-gray-600">Do zapłaty:</span> <strong>{price} zł</strong>
+        {/* Dół: po lewej cena + CTA, po prawej PESEL */}
+        <section className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start pt-2">
+          <div className="flex items-center justify-between">
+            <div className="text-lg">
+              <span className="text-gray-600">Do zapłaty:</span> <strong>{price} zł</strong>
+            </div>
+            <button type="submit" className="btn btn-primary" disabled={loading}>
+              {loading ? "Rezerwuję…" : visitType === "Teleporada" ? "Umów teleporadę" : "Umów wizytę domową"}
+            </button>
           </div>
-          <button type="submit" className="btn btn-primary" disabled={loading}>
-            {loading ? "Rezerwuję…" : visitType === "Teleporada" ? "Umów teleporadę" : "Umów wizytę domową"}
-          </button>
-        </div>
 
-        {/* 🔽 PRAWY DOLNY RÓG: PESEL */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="sm:col-span-2">
-            <label className={labelCls}>PESEL {noPesel ? "(pominięty)" : "*"}</label>
-            <input
-              type="text"
-              inputMode="numeric"
-              maxLength={11}
-              className={`${inputCls} ${noPesel ? "bg-gray-100" : ""}`}
-              value={pesel}
-              onChange={(e) => setPesel(e.target.value.replace(/\D/g, "").slice(0, 11))}
-              disabled={noPesel}
-              required={!noPesel}
-            />
-          </div>
-          <div className="flex items-end">
-            <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+          {/* 🔽 PRAWY DOLNY RÓG: PESEL */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="sm:col-span-2">
+              <label className={labelCls}>PESEL {noPesel ? "(pominięty)" : "*"}</label>
               <input
-                type="checkbox"
-                className="h-4 w-4"
-                checked={noPesel}
-                onChange={(e) => {
-                  setNoPesel(e.target.checked);
-                  if (e.target.checked) setPesel("");
-                }}
+                type="text"
+                inputMode="numeric"
+                maxLength={11}
+                className={`${inputCls} ${noPesel ? "bg-gray-100" : ""}`}
+                value={pesel}
+                onChange={(e) => setPesel(e.target.value.replace(/\D/g, "").slice(0, 11))}
+                disabled={noPesel}
+                required={!noPesel}
               />
-              Nie mam numeru PESEL
-            </label>
+            </div>
+            <div className="flex items-end">
+              <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={noPesel}
+                  onChange={(e) => {
+                    setNoPesel(e.target.checked);
+                    if (e.target.checked) setPesel("");
+                  }}
+                />
+                Nie mam numeru PESEL
+              </label>
+            </div>
           </div>
-        </div>
-      </div>
-    </form>
+        </section>
+      </form>
+    </>
   );
 }
