@@ -1,97 +1,121 @@
 // pages/api/bookings/index.ts
-import type { NextApiRequest, NextApiResponse } from "next";
-import { prisma } from "@/lib/prisma";
+import type { NextApiRequest, NextApiResponse } from 'next';
+import prisma from '@/lib/prisma';
 
-const TZ = "Europe/Warsaw";
+type Ok = { ok: true; id: string; redirectUrl: string };
+type Err = { ok: false; error: string };
 
-function ymdInWarsaw(iso: string | Date) {
-  const d = new Date(iso);
-  return d.toLocaleDateString("sv-SE", { timeZone: TZ });
-}
-function hhmmInWarsaw(iso: string | Date) {
-  const d = new Date(iso);
-  return d.toLocaleTimeString("pl-PL", {
-    timeZone: TZ,
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+const PRICES = {
+  Teleporada: 4900,     // 49 zł
+  'Wizyta domowa': 35000, // 350 zł
+} as const;
+
+function isValidIsoDate(s: string) {
+  const d = new Date(s);
+  return !isNaN(d.getTime());
 }
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Method not allowed" });
+// prosta walidacja PESEL (11 cyfr) – można rozszerzyć o checksum
+function isPesel(s: string) {
+  return /^\d{11}$/.test(s);
+}
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse<Ok | Err>) {
+  if (req.method !== 'POST') {
+    res.setHeader('Allow', 'POST');
+    return res.status(405).json({ ok: false, error: 'Method Not Allowed' });
+  }
 
   try {
-    const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
     const {
       fullName,
       email,
       phone,
       visitType,
       doctor,
-      date, // ISO z frontu
-      notes,
-      address,
+      date, // ISO
+      address, // legacy złożony ("Ulica 1, 00-000 Miasto")
+      addressLine1,
+      addressLine2,
+      city,
+      postalCode,
       pesel,
       noPesel,
-    } = body;
+    } = req.body ?? {};
 
-    if (!fullName || !email || !phone || !visitType || !doctor || !date) {
-      return res.status(400).json({ ok: false, error: "Brak wymaganych pól." });
+    // Walidacje bazowe
+    if (!fullName?.trim()) return res.status(400).json({ ok: false, error: 'Podaj imię i nazwisko.' });
+    if (!email?.trim()) return res.status(400).json({ ok: false, error: 'Podaj e-mail.' });
+    if (!phone?.trim()) return res.status(400).json({ ok: false, error: 'Podaj numer telefonu.' });
+
+    if (visitType !== 'Teleporada' && visitType !== 'Wizyta domowa') {
+      return res.status(400).json({ ok: false, error: 'Nieprawidłowy rodzaj wizyty.' });
     }
 
-    const priceCents = visitType === "Wizyta domowa" ? 35000 : 4900;
+    if (!isValidIsoDate(date)) return res.status(400).json({ ok: false, error: 'Nieprawidłowa data.' });
+    const when = new Date(date);
+    if (when.getTime() <= Date.now()) return res.status(400).json({ ok: false, error: 'Termin musi być w przyszłości.' });
 
-    let finalNotes = (notes || "").trim();
-    if (visitType === "Wizyta domowa" && address?.trim()) {
-      finalNotes = `Adres wizyty domowej: ${address.trim()}\n${finalNotes}`.trim();
+    if (visitType === 'Wizyta domowa') {
+      if (!addressLine1?.trim()) return res.status(400).json({ ok: false, error: 'Podaj ulicę i numer.' });
+      if (!/^\d{2}-\d{3}$/.test(String(postalCode))) return res.status(400).json({ ok: false, error: 'Kod pocztowy w formacie 00-000.' });
+      if (!city?.trim()) return res.status(400).json({ ok: false, error: 'Podaj miasto.' });
     }
 
-    // twarda blokada konfliktu dla Teleporady (dzień + HH:mm w PL)
-    if (visitType === "Teleporada") {
-      const targetYMD = ymdInWarsaw(date);
-      const targetHM = hhmmInWarsaw(date);
-      const existing = await prisma.booking.findMany({
-        where: { visitType: "Teleporada" },
-        select: { date: true, status: true },
-      });
-      const conflict = existing.some((b) => {
-        if (String(b.status || "").toUpperCase() === "CANCELLED") return false;
-        return ymdInWarsaw(b.date as any) === targetYMD && hhmmInWarsaw(b.date as any) === targetHM;
+    if (!noPesel) {
+      if (!isPesel(String(pesel))) return res.status(400).json({ ok: false, error: 'PESEL musi mieć 11 cyfr.' });
+    }
+
+    const priceCents = PRICES[visitType as 'Teleporada' | 'Wizyta domowa'];
+    const currency = 'PLN';
+
+    // (opcjonalny) konflikt tylko dla teleporad: ten sam timestamp
+    if (visitType === 'Teleporada') {
+      const conflict = await prisma.booking.findFirst({
+        where: {
+          date: when,
+          visitType: { contains: 'Teleporada', mode: 'insensitive' },
+        },
+        select: { id: true },
       });
       if (conflict) {
-        return res.status(409).json({ ok: false, error: "Ten termin jest już zajęty." });
+        return res.status(409).json({ ok: false, error: 'Ten termin jest już zajęty. Wybierz inną godzinę.' });
       }
     }
 
     const created = await prisma.booking.create({
       data: {
-        fullName,
-        email,
-        phone,
+        fullName: String(fullName).trim(),
+        email: String(email).trim(),
+        phone: String(phone).trim(),
         visitType,
-        doctor,
-        date: new Date(date),
-        notes: finalNotes || null,
-        address: visitType === "Wizyta domowa" ? address?.trim() || null : null,
-        pesel: pesel || null,
-        noPesel: !!noPesel,
-        status: "PENDING",
+        doctor: doctor || null,
+        date: when,
+        // adres – nowe pola + legacy złożony (dla zgodności z istniejącymi miejscami użycia)
+        address: address ?? (visitType === 'Wizyta domowa'
+          ? `${String(addressLine1).trim()}, ${String(postalCode).trim()} ${String(city).trim()}`
+          : null),
+        addressLine1: visitType === 'Wizyta domowa' ? String(addressLine1).trim() : null,
+        addressLine2: visitType === 'Wizyta domowa' ? (addressLine2 ? String(addressLine2).trim() : null) : null,
+        city: visitType === 'Wizyta domowa' ? String(city).trim() : null,
+        postalCode: visitType === 'Wizyta domowa' ? String(postalCode).trim() : null,
+
+        pesel: !noPesel ? String(pesel) : null,
+        noPesel: Boolean(noPesel),
+
         priceCents,
-        realized: false,
+        currency,
+        status: 'PENDING',
+        paymentStatus: 'UNPAID',
       },
       select: { id: true },
     });
 
-    // ⬇⬇ KLUCZ: przekażemy ID i kwotę w URL do mocku płatności
-    const amountStr = (priceCents / 100).toFixed(2);
-    return res.status(200).json({
-      ok: true,
-      id: created.id,
-      priceCents,
-      redirectUrl: `/platnosc/p24/mock?id=${encodeURIComponent(created.id)}&amount=${encodeURIComponent(amountStr)}`,
-    });
+    // TODO: tu możesz wpiąć kreację transakcji P24 i zwrócić faktyczny redirect
+    const redirectUrl = '/platnosc/p24/mock';
+
+    return res.status(200).json({ ok: true, id: created.id, redirectUrl });
   } catch (e: any) {
-    return res.status(500).json({ ok: false, error: "Błąd serwera", detail: e?.message ?? String(e) });
+    return res.status(500).json({ ok: false, error: e?.message ?? 'Server error' });
   }
 }
