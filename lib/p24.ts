@@ -1,106 +1,153 @@
-import crypto from 'crypto'
+// lib/p24.ts
+import crypto from "crypto";
 
-const IS_SANDBOX = process.env.P24_SANDBOX === 'true'
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+const isSandbox = (process.env.P24_ENV || "sandbox") === "sandbox";
 
-const HAS_CREDS =
-  !!process.env.P24_MERCHANT_ID &&
-  !!process.env.P24_POS_ID &&
-  !!process.env.P24_CRC &&
-  !!process.env.P24_API_KEY
+const BASE = isSandbox
+  ? "https://sandbox.przelewy24.pl"
+  : "https://secure.przelewy24.pl";
 
-const BASE = IS_SANDBOX
-  ? 'https://sandbox.przelewy24.pl'
-  : 'https://secure.przelewy24.pl'
+const merchantId = Number(process.env.P24_MERCHANT_ID || 0);
+const posId = Number(process.env.P24_POS_ID || 0);
+const crc = process.env.P24_CRC || "";
+const apiKey = process.env.P24_REST_API_KEY || "";
 
 function authHeader() {
-  const login = process.env.P24_MERCHANT_ID!
-  const pass = process.env.P24_API_KEY!
-  const token = Buffer.from(`${login}:${pass}`).toString('base64')
-  return `Basic ${token}`
+  // Basic base64(posId:apiKey)
+  const token = Buffer.from(`${posId}:${apiKey}`).toString("base64");
+  return `Basic ${token}`;
 }
 
-function signRegister({ sessionId, amount, currency }: { sessionId: string; amount: number; currency: string }) {
-  const obj = { sessionId, merchantId: Number(process.env.P24_MERCHANT_ID), amount, currency, crc: process.env.P24_CRC! }
-  return crypto.createHash('sha384').update(JSON.stringify(obj)).digest('hex')
+// SHA-384( JSON.stringify(obj) )
+function sha384Of(obj: Record<string, any>) {
+  const json = JSON.stringify(obj);
+  return crypto.createHash("sha384").update(json).digest("hex");
 }
 
-function signVerify({ sessionId, orderId, amount, currency }: { sessionId: string; orderId: number; amount: number; currency: string }) {
-  const obj = { sessionId, orderId, amount, currency, crc: process.env.P24_CRC! }
-  return crypto.createHash('sha384').update(JSON.stringify(obj)).digest('hex')
-}
-
-export async function p24RegisterTransaction(input: {
-  sessionId: string
-  amount: number
-  email: string
-  description: string
-  urlReturn: string
-  urlStatus: string
-  client?: string
+/** Rejestracja transakcji – zwraca token i link do przekierowania */
+export async function p24Register(opts: {
+  sessionId: string;               // unikalny identyfikator (np. booking.id)
+  amountCents: number;             // kwota w groszach
+  currency?: string;               // 'PLN'
+  description: string;
+  email: string;
+  country?: string;                // 'PL'
+  language?: string;               // 'pl'
+  urlReturn: string;
+  urlStatus: string;               // webhook
 }) {
-  if (IS_SANDBOX && !HAS_CREDS) {
-    const redirectUrl = `${APP_URL}/platnosc/p24/mock?bookingId=${encodeURIComponent(input.sessionId)}&amount=${encodeURIComponent(String(input.amount))}`
-    return { token: 'mock', redirectUrl }
-  }
+  const {
+    sessionId, amountCents, currency = "PLN",
+    description, email, country = "PL", language = "pl",
+    urlReturn, urlStatus
+  } = opts;
 
-  const body = {
-    merchantId: Number(process.env.P24_MERCHANT_ID),
-    posId: Number(process.env.P24_POS_ID),
-    sessionId: input.sessionId,
-    amount: input.amount,
-    currency: 'PLN',
-    description: input.description,
-    email: input.email,
-    country: 'PL',
-    urlReturn: input.urlReturn,
-    urlStatus: input.urlStatus,
-    sign: signRegister({ sessionId: input.sessionId, amount: input.amount, currency: 'PLN' }),
-  }
+  // sign dla register: {sessionId, merchantId, amount, currency, crc}
+  const sign = sha384Of({
+    sessionId,
+    merchantId,
+    amount: amountCents,
+    currency,
+    crc,
+  });
+
+  const payload = {
+    merchantId,
+    posId,
+    sessionId,
+    amount: amountCents,
+    currency,
+    description,
+    email,
+    country,
+    language,
+    urlReturn,
+    urlStatus,
+    sign,
+    // opcjonalnie można dodać 'channel', 'timeLimit', itd.
+  };
 
   const res = await fetch(`${BASE}/api/v1/transaction/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: authHeader() },
-    body: JSON.stringify(body),
-    // @ts-ignore
-    cache: 'no-store',
-  })
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: authHeader(),
+    },
+    body: JSON.stringify(payload),
+  });
 
-  const data: any = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(`P24 register ${res.status}: ${JSON.stringify(data)}`)
+  const data = await res.json().catch(() => ({} as any));
+  if (!res.ok || !data?.data?.token) {
+    const msg = data?.error || data?.message || `P24 register HTTP ${res.status}`;
+    throw new Error(msg);
+  }
 
-  const token: string = data?.data?.token || data?.token
-  if (!token) throw new Error('P24 register: brak tokenu')
-
-  const redirectUrl = `${BASE}/trnRequest/${token}`
-  return { token, redirectUrl }
+  const token: string = data.data.token;
+  // Link do przekierowania (sandbox / prod)
+  const redirectUrl = `${BASE}/trnRequest/${token}`;
+  return { token, redirectUrl };
 }
 
-export async function p24VerifyTransaction(input: { sessionId: string; orderId: number; amount: number; currency?: string }) {
-  if (IS_SANDBOX && !HAS_CREDS) {
-    return { data: { mock: true } }
-  }
+/** Weryfikacja transakcji po stronie serwera (po webhooku) */
+export async function p24Verify(opts: {
+  sessionId: string;
+  orderId: number;
+  amountCents: number;
+  currency?: string; // 'PLN'
+}) {
+  const { sessionId, orderId, amountCents, currency = "PLN" } = opts;
 
-  const currency = input.currency || 'PLN'
-  const body = {
-    merchantId: Number(process.env.P24_MERCHANT_ID),
-    posId: Number(process.env.P24_POS_ID),
-    sessionId: input.sessionId,
-    amount: input.amount,
+  // sign dla verify: {sessionId, orderId, amount, currency, crc}
+  const sign = sha384Of({
+    sessionId,
+    orderId,
+    amount: amountCents,
     currency,
-    orderId: input.orderId,
-    sign: signVerify({ sessionId: input.sessionId, orderId: input.orderId, amount: input.amount, currency }),
-  }
+    crc,
+  });
+
+  const payload = {
+    merchantId,
+    posId,
+    sessionId,
+    amount: amountCents,
+    currency,
+    orderId,
+    sign,
+  };
 
   const res = await fetch(`${BASE}/api/v1/transaction/verify`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: authHeader() },
-    body: JSON.stringify(body),
-    // @ts-ignore
-    cache: 'no-store',
-  })
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: authHeader(),
+    },
+    body: JSON.stringify(payload),
+  });
 
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(`P24 verify ${res.status}: ${JSON.stringify(data)}`)
-  return data
+  const data = await res.json().catch(() => ({} as any));
+  if (!res.ok) {
+    const msg = data?.error || data?.message || `P24 verify HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+  // w dok. ok==true oznacza poprawną weryfikację
+  return true;
+}
+
+/** Walidacja podpisu z webhooka (notify) – porównujemy sign */
+export function p24ValidateWebhookSign(body: {
+  sessionId: string;
+  orderId: number;
+  amount: number;   // grosze
+  currency: string; // PLN
+  sign: string;
+}) {
+  const expected = sha384Of({
+    sessionId: body.sessionId,
+    orderId: body.orderId,
+    amount: body.amount,
+    currency: body.currency,
+    crc,
+  });
+  return expected === body.sign;
 }
