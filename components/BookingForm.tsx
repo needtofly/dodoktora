@@ -62,8 +62,11 @@ export default function BookingForm() {
     urlType === "Wizyta domowa" ? "Wizyta domowa" : "Teleporada"
   );
   const [doctor, setDoctor] = useState<string>(urlDoctor || DOCTORS[0]);
-  const [address, setAddress] = useState("");
-  const [notes, setNotes] = useState("");
+
+  // Nowe rozbite pola adresu (wymagane dla wizyty domowej)
+  const [addressLine1, setAddressLine1] = useState(""); // ulica i numer
+  const [postalCode, setPostalCode] = useState(""); // 00-000
+  const [city, setCity] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [errMsg, setErrMsg] = useState<string>("");
@@ -73,6 +76,7 @@ export default function BookingForm() {
 
   const price = useMemo(() => (visitType === "Teleporada" ? 49 : 350), [visitType]);
 
+  // Pobieranie zajętych slotów
   const [takenSlots, setTakenSlots] = useState<string[]>([]);
   useEffect(() => {
     setTakenSlots([]);
@@ -86,6 +90,7 @@ export default function BookingForm() {
       .catch(() => {});
   }, [date]);
 
+  // Lista slotów do pokazania (bez przeszłości, ale NIE filtrujemy "taken" – pokażemy je jako wyszarzone)
   const displaySlots = useMemo(() => {
     if (!date) return ALL_SLOTS;
     let slots = [...ALL_SLOTS];
@@ -97,14 +102,8 @@ export default function BookingForm() {
       const minSlot = `${hh}:${mm}`;
       slots = slots.filter((s) => s >= minSlot);
     }
-
-    if (visitType === "Teleporada" && takenSlots.length) {
-      const takenSet = new Set(takenSlots);
-      slots = slots.filter((s) => !takenSet.has(s));
-    }
-
     return slots;
-  }, [date, visitType, takenSlots, today, todayStr]);
+  }, [date, today, todayStr]);
 
   useEffect(() => {
     if (urlType === "Wizyta domowa" || urlType === "Teleporada") {
@@ -129,8 +128,10 @@ export default function BookingForm() {
     if (!time) return setErrMsg("Wybierz godzinę.");
     if (!isValidSelectedDateTime()) return setErrMsg("Nie można rezerwować terminu w przeszłości.");
 
-    if (visitType === "Wizyta domowa" && !address.trim()) {
-      return setErrMsg("Adres wizyty domowej jest wymagany.");
+    if (visitType === "Wizyta domowa") {
+      if (!addressLine1.trim()) return setErrMsg("Podaj ulicę i numer.");
+      if (!/^\d{2}-\d{3}$/.test(postalCode)) return setErrMsg("Podaj kod pocztowy w formacie 00-000.");
+      if (!city.trim()) return setErrMsg("Podaj miasto.");
     }
 
     if (!noPesel) {
@@ -146,6 +147,12 @@ export default function BookingForm() {
       // ISO liczone z lokalnego czasu -> serwer zapisze UTC, ale odpowiadające lokalnie wybranej godzinie
       const iso = localDateTimeToISO(date, time);
 
+      // Złożony adres (legacy) – dla zgodności z backendem
+      const addressCombined =
+        visitType === "Wizyta domowa"
+          ? `${addressLine1.trim()}, ${postalCode.trim()} ${city.trim()}`
+          : undefined;
+
       const res = await fetch("/api/bookings", {
         method: "POST",
         cache: "no-store",
@@ -157,8 +164,13 @@ export default function BookingForm() {
           visitType,
           doctor,
           date: iso,
-          notes,
-          address: visitType === "Wizyta domowa" ? address.trim() : undefined,
+          // adres – nowe rozbite pola
+          addressLine1: visitType === "Wizyta domowa" ? addressLine1.trim() : undefined,
+          postalCode: visitType === "Wizyta domowa" ? postalCode.trim() : undefined,
+          city: visitType === "Wizyta domowa" ? city.trim() : undefined,
+          // legacy fallback
+          address: addressCombined,
+          // pesel
           pesel: !noPesel ? pesel : undefined,
           noPesel,
         }),
@@ -168,7 +180,7 @@ export default function BookingForm() {
       if (!res.ok || !data?.ok) {
         setLoading(false);
         return setErrMsg(data?.error || `Błąd (${res.status}) podczas rezerwacji. Spróbuj ponownie.`);
-        }
+      }
       window.location.assign(data.redirectUrl || "/platnosc/p24/mock");
     } catch {
       setErrMsg("Wystąpił błąd sieci. Spróbuj ponownie.");
@@ -211,17 +223,43 @@ export default function BookingForm() {
         </div>
       </div>
 
-      {/* Godzina i typ wizyty */}
+      {/* Godzina (siatka) i typ wizyty */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label className={labelCls}>Godzina *</label>
-          <select className={inputCls} value={time} onChange={(e) => setTime(e.target.value)} required>
-            <option value="" disabled>Wybierz godzinę (07:00–21:50)</option>
-            {displaySlots.map((t) => (
-              <option key={t} value={t}>{t}</option>
-            ))}
-          </select>
+
+          {!date ? (
+            <div className="text-sm text-gray-500 h-12 flex items-center">Najpierw wybierz datę.</div>
+          ) : (
+            <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-8 gap-2">
+              {displaySlots.map((t) => {
+                const isTaken = takenSlots.includes(t);
+                const isSelected = time === t;
+                return (
+                  <button
+                    type="button"
+                    key={t}
+                    aria-pressed={isSelected}
+                    onClick={() => !isTaken && setTime(t)}
+                    className={[
+                      "h-10 rounded-lg border text-sm",
+                      isTaken
+                        ? "bg-gray-100 text-gray-400 line-through cursor-not-allowed"
+                        : isSelected
+                        ? "bg-blue-600 text-white border-blue-600"
+                        : "bg-white hover:bg-blue-50 border-gray-300",
+                    ].join(" ")}
+                    title={isTaken ? "Termin zajęty" : "Dostępny termin"}
+                    disabled={isTaken}
+                  >
+                    {t}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
+
         <div>
           <label className={labelCls}>Rodzaj wizyty *</label>
           <select className={inputCls} value={visitType} onChange={(e) => setVisitType(e.target.value as VisitType)} required>
@@ -231,65 +269,102 @@ export default function BookingForm() {
         </div>
       </div>
 
-      {/* Lekarz + adres */}
+      {/* Lekarz */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label className={labelCls}>Lekarz *</label>
           <select className={inputCls} value={doctor} onChange={(e) => setDoctor(e.target.value)} required>
-            {DOCTORS.map((d) => <option key={d} value={d}>{d}</option>)}
+            {DOCTORS.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
           </select>
         </div>
+
+        {/* Adres wizyty domowej – widoczny TYLKO dla wizyty domowej */}
         {visitType === "Wizyta domowa" && (
-          <div>
-            <label className={labelCls}>Adres wizyty domowej *</label>
-            <input type="text" className={inputCls} value={address} onChange={(e) => setAddress(e.target.value)} required />
+          <div className="grid grid-cols-1 gap-4">
+            <div>
+              <label className={labelCls}>Ulica i numer *</label>
+              <input
+                type="text"
+                className={inputCls}
+                value={addressLine1}
+                onChange={(e) => setAddressLine1(e.target.value)}
+                required
+              />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className={labelCls}>Kod pocztowy *</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="\d{2}-\d{3}"
+                  placeholder="00-000"
+                  className={inputCls}
+                  value={postalCode}
+                  onChange={(e) => setPostalCode(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Miasto *</label>
+                <input
+                  type="text"
+                  className={inputCls}
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
           </div>
         )}
       </div>
 
-      {/* PESEL */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className={labelCls}>PESEL {noPesel ? "(pominięty)" : "*"}</label>
-          <input
-            type="text"
-            inputMode="numeric"
-            maxLength={11}
-            className={`${inputCls} ${noPesel ? "bg-gray-100" : ""}`}
-            value={pesel}
-            onChange={(e) => setPesel(e.target.value.replace(/\D/g, "").slice(0, 11))}
-            disabled={noPesel}
-            required={!noPesel}
-          />
+      {/* Dół: po lewej cena + CTA, po prawej PESEL */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start pt-4">
+        <div className="flex items-center justify-between">
+          <div className="text-lg">
+            <span className="text-gray-600">Do zapłaty:</span> <strong>{price} zł</strong>
+          </div>
+          <button type="submit" className="btn btn-primary" disabled={loading}>
+            {loading ? "Rezerwuję…" : visitType === "Teleporada" ? "Umów teleporadę" : "Umów wizytę domową"}
+          </button>
         </div>
-        <div className="flex items-end">
-          <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+
+        {/* 🔽 PRAWY DOLNY RÓG: PESEL */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="sm:col-span-2">
+            <label className={labelCls}>PESEL {noPesel ? "(pominięty)" : "*"}</label>
             <input
-              type="checkbox"
-              className="h-4 w-4"
-              checked={noPesel}
-              onChange={(e) => {
-                setNoPesel(e.target.checked);
-                if (e.target.checked) setPesel("");
-              }}
+              type="text"
+              inputMode="numeric"
+              maxLength={11}
+              className={`${inputCls} ${noPesel ? "bg-gray-100" : ""}`}
+              value={pesel}
+              onChange={(e) => setPesel(e.target.value.replace(/\D/g, "").slice(0, 11))}
+              disabled={noPesel}
+              required={!noPesel}
             />
-            Nie mam numeru PESEL
-          </label>
+          </div>
+          <div className="flex items-end">
+            <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={noPesel}
+                onChange={(e) => {
+                  setNoPesel(e.target.checked);
+                  if (e.target.checked) setPesel("");
+                }}
+              />
+              Nie mam numeru PESEL
+            </label>
+          </div>
         </div>
-      </div>
-
-      {/* Uwagi */}
-      <div>
-        <label className={labelCls}>Uwagi (opcjonalnie)</label>
-        <textarea className={`${inputCls} min-h-[100px]`} value={notes} onChange={(e) => setNotes(e.target.value)} />
-      </div>
-
-      {/* Cena + CTA */}
-      <div className="flex justify-between items-center pt-4">
-        <div className="text-lg"><span className="text-gray-600">Do zapłaty:</span> <strong>{price} zł</strong></div>
-        <button type="submit" className="btn btn-primary" disabled={loading}>
-          {loading ? "Rezerwuję…" : visitType === "Teleporada" ? "Umów teleporadę" : "Umów wizytę domową"}
-        </button>
       </div>
     </form>
   );

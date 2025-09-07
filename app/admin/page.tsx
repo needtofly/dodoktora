@@ -1,7 +1,6 @@
 // app/admin/page.tsx
+export const dynamic = 'force-dynamic';
 import AdminTable from '@/components/AdminTable';
-
-export const dynamic = 'force-dynamic'; // zawsze świeże dane
 
 export default function AdminPage() {
   return (

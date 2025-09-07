@@ -2,6 +2,10 @@ import type { Metadata } from 'next'
 import Image from 'next/image'
 import JsonLd from '@/components/JsonLd'
 import Breadcrumbs from '@/components/Breadcrumbs'
+import nextDynamic from 'next/dynamic'
+
+export const dynamic = 'force-dynamic'
+const BookingForm = nextDynamic(() => import('@/components/BookingForm'), { ssr: false })
 
 const BASE = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
@@ -84,11 +88,10 @@ export default function WizytaDomowaPage() {
         </p>
       </section>
 
-      <div className="mt-8">
-        <a href="/?type=Wizyta%20domowa#umow" className="btn btn-primary">
-          Umów wizytę domową
-        </a>
-      </div>
+      {/* Formularz rezerwacji */}
+      <section className="mt-8">
+        <BookingForm />
+      </section>
     </main>
   )
 }

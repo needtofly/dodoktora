@@ -1,6 +1,9 @@
 import type { Metadata } from 'next'
 import JsonLd from '@/components/JsonLd'
-import Link from 'next/link'
+import nextDynamic from 'next/dynamic'
+
+export const dynamic = 'force-dynamic'
+const BookingForm = nextDynamic(() => import('@/components/BookingForm'), { ssr: false })
 
 const BASE = 'https://dodoktora.co'
 
@@ -34,24 +37,9 @@ export default function TeleporadaPage() {
     '@context': 'https://schema.org',
     '@type': 'BreadcrumbList',
     itemListElement: [
-      {
-        '@type': 'ListItem',
-        position: 1,
-        name: 'Strona główna',
-        item: BASE
-      },
-      {
-        '@type': 'ListItem',
-        position: 2,
-        name: 'Usługi',
-        item: `${BASE}/#uslugi`
-      },
-      {
-        '@type': 'ListItem',
-        position: 3,
-        name: 'Teleporada',
-        item: `${BASE}/uslugi/teleporada`
-      }
+      { '@type': 'ListItem', position: 1, name: 'Strona główna', item: BASE },
+      { '@type': 'ListItem', position: 2, name: 'Usługi', item: `${BASE}/#uslugi` },
+      { '@type': 'ListItem', position: 3, name: 'Teleporada', item: `${BASE}/uslugi/teleporada` }
     ]
   }
 
@@ -73,9 +61,10 @@ export default function TeleporadaPage() {
         <li>Otrzymasz link do połączenia lub telefon od lekarza.</li>
       </ul>
 
-      <div className="mt-8">
-        <Link href="/?type=Teleporada#umow" className="btn btn-primary">Umów teleporadę</Link>
-      </div>
+      {/* Formularz rezerwacji */}
+      <section className="mt-8">
+        <BookingForm />
+      </section>
     </main>
   )
 }
