@@ -1,10 +1,10 @@
 // app/admin/login/page.tsx
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 
-export default function AdminLoginPage() {
+function LoginInner() {
   const sp = useSearchParams()
   const router = useRouter()
   const [password, setPassword] = useState('')
@@ -33,7 +33,7 @@ export default function AdminLoginPage() {
     try {
       const r = await fetch('/api/auth/login', {
         method: 'POST',
-        credentials: 'include', // ważne: potrzebne do ciasteczka httpOnly
+        credentials: 'include', // httpOnly cookie
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password }),
       })
@@ -52,7 +52,6 @@ export default function AdminLoginPage() {
     }
   }
 
-  // Przydatne do diagnostyki – pokaże co widzi serwer
   const debugWhoAmI = async () => {
     try {
       const r = await fetch('/api/admin/_whoami', { cache: 'no-store', credentials: 'include' })
@@ -83,5 +82,13 @@ export default function AdminLoginPage() {
         <button onClick={debugWhoAmI} className="underline">Pokaż /api/admin/_whoami</button>
       </div>
     </main>
+  )
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={<div className="p-6">Ładowanie…</div>}>
+      <LoginInner />
+    </Suspense>
   )
 }
