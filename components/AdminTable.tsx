@@ -3,14 +3,13 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-type VisitType = 'TELEPORADA' | 'WIZYTA_DOMOWA';
-type PaymentStatus = 'UNPAID' | 'PAID' | 'REFUNDED';
-type BookingStatus = 'PENDING' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED';
+type VisitType = 'TELEPORADA' | 'WIZYTA_DOMOWA' | string;
+type PaymentStatus = 'UNPAID' | 'PAID' | 'REFUNDED' | string;
+type BookingStatus = 'PENDING' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED' | string;
 
 export type Booking = {
   id: string;
   createdAt: string;
-  // w bazie termin to "date"
   date: string;
 
   fullName?: string | null;
@@ -18,23 +17,25 @@ export type Booking = {
   phone?: string | null;
   pesel?: string | null;
 
-  visitType: VisitType | string;
+  visitType: VisitType;
 
-  // stary jednolinijkowy adres
-  address?: string | null;
-
-  // nowe, rozbite pola adresu (mogą nie być ustawione)
+  // adresy
+  address?: string | null; // legacy
   addressLine1?: string | null;
   addressLine2?: string | null;
   city?: string | null;
   postalCode?: string | null;
 
-  status: BookingStatus | string;
+  notes?: string | null;
+  doctor?: string | null;
+
+  status: BookingStatus;
   completedAt?: string | null;
 
-  paymentStatus: PaymentStatus | string;
+  paymentStatus: PaymentStatus;
   paymentRef?: string | null;
   priceCents?: number | null;
+  currency?: string | null;
 };
 
 function fmtDateTime(iso?: string | null) {
@@ -49,19 +50,27 @@ function fmtDateTime(iso?: string | null) {
   });
 }
 
+function moneyPLN(cents?: number | null, currency = 'PLN') {
+  if (typeof cents !== 'number') return '—';
+  const val = cents / 100;
+  try {
+    return new Intl.NumberFormat('pl-PL', { style: 'currency', currency }).format(val);
+  } catch {
+    return `${val.toFixed(2)} ${currency}`;
+  }
+}
+
 function pickAddressParts(b: Booking) {
   const parts = [b.addressLine1, b.addressLine2, b.postalCode, b.city]
     .map((x) => (x ?? '').trim())
     .filter(Boolean) as string[];
-  return parts.length ? parts.join(', ') : null;
+  return parts.length ? parts.join(', ') : '';
 }
 
-// ✅ POKAZUJEMY ADRES, JEŚLI JEST — niezależnie od visitType.
-// (często visitType ma inne formaty: "Wizyta domowa", "wizyta-domowa", itp.)
-function addressOf(b: Booking) {
+function fullAddress(b: Booking) {
   const structured = pickAddressParts(b);
   const legacy = (b.address ?? '').trim();
-  return structured || (legacy || '—');
+  return structured || legacy || '—';
 }
 
 export default function AdminTable() {
@@ -69,10 +78,14 @@ export default function AdminTable() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
+  // filtry
   const [q, setQ] = useState('');
-  const [status, setStatus] = useState<string>('');
-  const [paymentStatus, setPaymentStatus] = useState<string>('');
-  const [visitType, setVisitType] = useState<string>('');
+  const [status, setStatus] = useState('');
+  const [paymentStatus, setPaymentStatus] = useState('');
+  const [visitType, setVisitType] = useState('');
+
+  // rozwinięcia
+  const [open, setOpen] = useState<Record<string, boolean>>({});
 
   const load = async () => {
     setLoading(true);
@@ -100,24 +113,31 @@ export default function AdminTable() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const markCompleted = async (id: string) => {
-    if (!confirm('Oznaczyć wizytę jako zrealizowaną?')) return;
+  const toggleOpen = (id: string) => setOpen((s) => ({ ...s, [id]: !s[id] }));
+
+  const setStatusApi = async (id: string, newStatus: BookingStatus) => {
     const res = await fetch(`/api/admin/bookings/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ status: 'COMPLETED' }),
+      body: JSON.stringify({ status: newStatus }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data?.ok) {
       alert(data?.error || `Nie udało się zaktualizować (HTTP ${res.status})`);
-      return;
+      return false;
     }
     setList((prev) =>
-      prev.map((b) => (b.id === id ? { ...b, status: 'COMPLETED', completedAt: new Date().toISOString() } : b)),
+      prev.map((b) =>
+        b.id === id ? { ...b, status: newStatus, completedAt: newStatus === 'COMPLETED' ? new Date().toISOString() : null } : b,
+      ),
     );
+    return true;
   };
 
-  const updatePayment = async (id: string, newStatus: PaymentStatus | string, newRef: string) => {
+  const markCompleted = (id: string) => setStatusApi(id, 'COMPLETED');
+  const revertCompleted = (id: string) => setStatusApi(id, 'CONFIRMED');
+
+  const updatePayment = async (id: string, newStatus: PaymentStatus, newRef: string) => {
     const res = await fetch(`/api/admin/bookings/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
@@ -148,10 +168,11 @@ export default function AdminTable() {
     <div className="p-4 space-y-4">
       <h1 className="text-2xl font-semibold">Panel rezerwacji</h1>
 
+      {/* Filtry */}
       <div className="grid gap-2 md:grid-cols-4">
         <input
           className="border rounded px-3 py-2"
-          placeholder="Szukaj (imię, email, telefon, PESEL, numer płatności)"
+          placeholder="Szukaj (imię, email, telefon, PESEL, numer płatności, adres, ID)"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && load()}
@@ -202,79 +223,178 @@ export default function AdminTable() {
           <table className="min-w-full border text-sm">
             <thead className="bg-gray-50">
               <tr className="text-left">
-                <th className="p-2 border">Data zgł.</th>
-                <th className="p-2 border">Termin</th>
+                <th className="p-2 border w-12"> </th>
+                <th className="p-2 border whitespace-nowrap">Data zgł.</th>
+                <th className="p-2 border whitespace-nowrap">Termin</th>
                 <th className="p-2 border">Pacjent</th>
-                <th className="p-2 border">PESEL</th>
                 <th className="p-2 border">Typ</th>
-                <th className="p-2 border">Adres (jeśli podany)</th>
-                <th className="p-2 border">Kontakt</th>
                 <th className="p-2 border">Status</th>
                 <th className="p-2 border">Płatność</th>
                 <th className="p-2 border">Akcje</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((b) => (
-                <tr key={b.id} className="odd:bg-white even:bg-gray-50 align-top">
-                  <td className="p-2 border whitespace-nowrap">{fmtDateTime(b.createdAt)}</td>
-                  <td className="p-2 border whitespace-nowrap">{fmtDateTime(b.date)}</td>
-                  <td className="p-2 border">
-                    <div className="font-medium">{b.fullName || '—'}</div>
-                    <div className="text-xs text-gray-500">#{b.id}</div>
-                  </td>
-                  <td className="p-2 border">{b.pesel || '—'}</td>
-                  <td className="p-2 border">{(b.visitType as string) || '—'}</td>
-                  <td className="p-2 border">{addressOf(b)}</td>
-                  <td className="p-2 border">
-                    <div>{b.phone || '—'}</div>
-                    <div className="text-xs text-gray-600">{b.email || '—'}</div>
-                  </td>
-                  <td className="p-2 border">
-                    <div>{(b.status as string) || '—'}</div>
-                    {b.completedAt && <div className="text-xs text-gray-600">({fmtDateTime(b.completedAt)})</div>}
-                  </td>
-                  <td className="p-2 border">
-                    <div className="flex flex-col gap-1">
-                      <select
-                        className="border rounded px-2 py-1"
-                        defaultValue={(b.paymentStatus as string) || 'UNPAID'}
-                        onChange={(e) => updatePayment(b.id, e.target.value, b.paymentRef || '')}
-                      >
-                        <option value="UNPAID">UNPAID</option>
-                        <option value="PAID">PAID</option>
-                        <option value="REFUNDED">REFUNDED</option>
-                      </select>
-                      <input
-                        className="border rounded px-2 py-1"
-                        placeholder="Numer transakcji (P24)"
-                        defaultValue={b.paymentRef || ''}
-                        onBlur={(e) => updatePayment(b.id, (b.paymentStatus as string) || 'UNPAID', e.currentTarget.value)}
-                      />
-                    </div>
-                  </td>
-                  <td className="p-2 border">
-                    <div className="flex flex-wrap gap-2">
-                      {(b.status as string) !== 'COMPLETED' && (
-                        <button className="px-3 py-1 rounded bg-green-600 text-white" onClick={() => markCompleted(b.id)}>
-                          Zrealizowana
-                        </button>
-                      )}
-                      <button className="px-3 py-1 rounded bg-red-600 text-white" onClick={() => removeBooking(b.id)}>
-                        Usuń
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {filtered.map((b) => {
+                const isCompleted = (b.status as string) === 'COMPLETED';
+                const rowBg = isCompleted ? 'bg-green-50' : '';
+                const detailBg = isCompleted ? 'bg-green-50' : 'bg-gray-50';
+                return (
+                  <FragmentRow
+                    key={b.id}
+                    b={b}
+                    open={!!open[b.id]}
+                    onToggle={() => toggleOpen(b.id)}
+                    rowBg={rowBg}
+                    detailBg={detailBg}
+                    markCompleted={() => markCompleted(b.id)}
+                    revertCompleted={() => revertCompleted(b.id)}
+                    removeBooking={() => removeBooking(b.id)}
+                    updatePayment={updatePayment}
+                  />
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
 
-      <div className="text-xs text-gray-500">
-        Wskazówka: edytuj status płatności z listy, a numer transakcji wpisz w polu – zapisuje się przy wyjściu z pola.
-      </div>
+      <div className="text-xs text-gray-500">Tip: kliknij strzałkę, aby rozwinąć szczegóły wizyty.</div>
     </div>
+  );
+}
+
+type RowProps = {
+  b: Booking;
+  open: boolean;
+  onToggle: () => void;
+  rowBg: string;
+  detailBg: string;
+  markCompleted: () => void;
+  revertCompleted: () => void;
+  removeBooking: () => void;
+  updatePayment: (id: string, status: PaymentStatus, ref: string) => void;
+};
+
+function FragmentRow({
+  b,
+  open,
+  onToggle,
+  rowBg,
+  detailBg,
+  markCompleted,
+  revertCompleted,
+  removeBooking,
+  updatePayment,
+}: RowProps) {
+  const isCompleted = (b.status as string) === 'COMPLETED';
+
+  return (
+    <>
+      {/* GŁÓWNY WIERSZ */}
+      <tr className={`align-top ${rowBg}`}>
+        <td className="p-2 border">
+          <button
+            className="px-2 py-1 rounded border hover:bg-gray-100"
+            aria-expanded={open}
+            onClick={onToggle}
+            title={open ? 'Zwiń szczegóły' : 'Rozwiń szczegóły'}
+          >
+            {open ? '▾' : '▸'}
+          </button>
+        </td>
+        <td className="p-2 border whitespace-nowrap">{fmtDateTime(b.createdAt)}</td>
+        <td className="p-2 border whitespace-nowrap">{fmtDateTime(b.date)}</td>
+        <td className="p-2 border">
+          <div className="font-medium">{b.fullName || '—'}</div>
+          <div className="text-xs text-gray-500">#{b.id}</div>
+        </td>
+        <td className="p-2 border">{(b.visitType as string) || '—'}</td>
+        <td className="p-2 border">
+          <div>{(b.status as string) || '—'}</div>
+          {b.completedAt && <div className="text-xs text-gray-600">({fmtDateTime(b.completedAt)})</div>}
+        </td>
+        <td className="p-2 border">
+          <div className="text-sm">{(b.paymentStatus as string) || '—'}</div>
+          {b.paymentRef && <div className="text-xs text-gray-600">#{b.paymentRef}</div>}
+        </td>
+        <td className="p-2 border">
+          <div className="flex flex-wrap gap-2">
+            {!isCompleted ? (
+              <button className="px-3 py-1 rounded bg-green-600 text-white" onClick={markCompleted}>
+                Zrealizowana
+              </button>
+            ) : (
+              <button className="px-3 py-1 rounded border bg-white" onClick={revertCompleted} title="Cofnij do CONFIRMED">
+                Cofnij
+              </button>
+            )}
+            <button className="px-3 py-1 rounded bg-red-600 text-white" onClick={removeBooking}>
+              Usuń
+            </button>
+          </div>
+        </td>
+      </tr>
+
+      {/* SZCZEGÓŁY */}
+      {open && (
+        <tr className={`${detailBg}`}>
+          <td className="p-0 border" colSpan={8}>
+            <div className="p-3 grid grid-cols-1 md:grid-cols-4 gap-4 text-[13px]">
+              <div className="md:col-span-2">
+                <h4 className="font-semibold mb-1">Adres</h4>
+                <div>{fullAddress(b)}</div>
+              </div>
+              <div>
+                <h4 className="font-semibold mb-1">Kontakt</h4>
+                <div>{b.phone || '—'}</div>
+                <div className="text-gray-600">{b.email || '—'}</div>
+              </div>
+              <div>
+                <h4 className="font-semibold mb-1">Pacjent</h4>
+                <div>PESEL: {b.pesel || '—'}</div>
+                <div>Lekarz: {b.doctor || '—'}</div>
+              </div>
+
+              <div>
+                <h4 className="font-semibold mb-1">Płatność</h4>
+                <div className="flex items-center gap-2">
+                  <select
+                    className="border rounded px-2 py-1"
+                    defaultValue={(b.paymentStatus as string) || 'UNPAID'}
+                    onChange={(e) => updatePayment(b.id, e.target.value, b.paymentRef || '')}
+                  >
+                    <option value="UNPAID">UNPAID</option>
+                    <option value="PAID">PAID</option>
+                    <option value="REFUNDED">REFUNDED</option>
+                  </select>
+                </div>
+                <div className="mt-2">
+                  <label className="block text-xs text-gray-600 mb-1">Numer transakcji (P24)</label>
+                  <input
+                    className="border rounded px-2 py-1 w-full"
+                    placeholder="np. TRX-123..."
+                    defaultValue={b.paymentRef || ''}
+                    onBlur={(e) => updatePayment(b.id, (b.paymentStatus as string) || 'UNPAID', e.currentTarget.value)}
+                  />
+                </div>
+                <div className="mt-2 text-gray-700">Kwota: {moneyPLN(b.priceCents ?? undefined, b.currency || 'PLN')}</div>
+              </div>
+
+              <div className="md:col-span-3">
+                <h4 className="font-semibold mb-1">Uwagi</h4>
+                <div className="whitespace-pre-wrap">{b.notes?.trim() || '—'}</div>
+              </div>
+
+              <div>
+                <h4 className="font-semibold mb-1">Daty</h4>
+                <div>Utworzono: {fmtDateTime(b.createdAt)}</div>
+                <div>Termin: {fmtDateTime(b.date)}</div>
+                {b.completedAt && <div>Zrealizowano: {fmtDateTime(b.completedAt)}</div>}
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
