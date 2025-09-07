@@ -10,7 +10,7 @@ type BookingStatus = 'PENDING' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED';
 export type Booking = {
   id: string;
   createdAt: string;
-  // ⬇️ w Twojej bazie pole z terminem to "date"
+  // w bazie termin to "date"
   date: string;
 
   fullName?: string | null;
@@ -40,7 +40,6 @@ export type Booking = {
 function fmtDateTime(iso?: string | null) {
   if (!iso) return '—';
   const dt = new Date(iso);
-  // Prezentacja w lokalnym formacie (PL) z godziną
   return dt.toLocaleString('pl-PL', {
     year: 'numeric',
     month: '2-digit',
@@ -51,14 +50,18 @@ function fmtDateTime(iso?: string | null) {
 }
 
 function pickAddressParts(b: Booking) {
-  const parts = [b.addressLine1, b.addressLine2, b.postalCode, b.city].filter(Boolean) as string[];
+  const parts = [b.addressLine1, b.addressLine2, b.postalCode, b.city]
+    .map((x) => (x ?? '').trim())
+    .filter(Boolean) as string[];
   return parts.length ? parts.join(', ') : null;
 }
 
+// ✅ POKAZUJEMY ADRES, JEŚLI JEST — niezależnie od visitType.
+// (często visitType ma inne formaty: "Wizyta domowa", "wizyta-domowa", itp.)
 function addressOf(b: Booking) {
-  if ((b.visitType as string).toUpperCase?.() !== 'WIZYTA_DOMOWA') return '—';
-  // najpierw rozbite pola, jeśli puste – fallback do starego "address"
-  return pickAddressParts(b) || (b.address || '—');
+  const structured = pickAddressParts(b);
+  const legacy = (b.address ?? '').trim();
+  return structured || (legacy || '—');
 }
 
 export default function AdminTable() {
@@ -204,7 +207,7 @@ export default function AdminTable() {
                 <th className="p-2 border">Pacjent</th>
                 <th className="p-2 border">PESEL</th>
                 <th className="p-2 border">Typ</th>
-                <th className="p-2 border">Adres (domowa)</th>
+                <th className="p-2 border">Adres (jeśli podany)</th>
                 <th className="p-2 border">Kontakt</th>
                 <th className="p-2 border">Status</th>
                 <th className="p-2 border">Płatność</th>
