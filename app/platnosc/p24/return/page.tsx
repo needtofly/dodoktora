@@ -8,7 +8,10 @@ import Link from "next/link";
 type BookingStatus = "PENDING" | "CONFIRMED" | "COMPLETED" | "CANCELLED" | string;
 type PaymentStatus = "UNPAID" | "PAID" | "REFUNDED" | string;
 
+// wyłącz SSG / cache dla tej strony
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
 
 export default function P24ReturnPage() {
   const sp = useSearchParams();
@@ -21,7 +24,7 @@ export default function P24ReturnPage() {
   const isError = !!err;
   const isPaid = payment === "PAID";
 
-  // prosty polling przez kilka sekund – żeby webhook zdążył dobić
+  // polling przez kilka sekund – czekamy na webhook
   useEffect(() => {
     if (!bookingId) return;
     let alive = true;
@@ -36,7 +39,6 @@ export default function P24ReturnPage() {
           if (!alive) return;
           setStatus(d.booking.status);
           setPayment(d.booking.paymentStatus);
-          // jeśli już opłacone albo zrobiliśmy kilka prób, kończymy
           if (d.booking.paymentStatus === "PAID" || tries >= 6) {
             setLoading(false);
             return;
@@ -68,7 +70,6 @@ export default function P24ReturnPage() {
   return (
     <main className="max-w-3xl mx-auto px-4 py-16">
       <div className="bg-white border rounded-2xl shadow-sm p-8 text-center space-y-4">
-        {/* Ikona statusu */}
         {!isError && !isPaid && (
           <div className="mx-auto w-16 h-16 rounded-full border animate-pulse flex items-center justify-center">
             <span className="text-xl">⏳</span>
@@ -88,7 +89,6 @@ export default function P24ReturnPage() {
         <h1 className="text-2xl font-semibold">{Title}</h1>
         <p className="text-gray-600">{Subtitle}</p>
 
-        {/* Szczegóły (jeśli mamy bookingId) */}
         {bookingId && (
           <div className="mt-4 text-sm text-gray-600">
             <div>ID rezerwacji: <span className="font-mono">{bookingId}</span></div>
