@@ -7,7 +7,6 @@ const isSandbox = (process.env.P24_ENV || "sandbox") === "sandbox";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method === "GET") {
-    // prościutki publiczny status po id (bez danych wrażliwych)
     const id = String(req.query.id || "");
     if (!id) return res.status(400).json({ ok: false, error: "Missing id" });
     try {
@@ -42,12 +41,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const priceCents = visitType === "Wizyta domowa" ? 35000 : 4900;
     const currency = "PLN";
 
+    const iso = new Date(date); // klient wysyła ISO w UTC (z localDateTimeToISO)
+    if (Number.isNaN(iso.getTime())) {
+      return res.status(400).json({ ok: false, error: "Invalid date" });
+    }
+
+    // 🔒 BLOKADA KONFLIKTU: sprawdź czy slot nie jest już zajęty (dokładna minuta)
+    const clash = await prisma.booking.findFirst({
+      where: {
+        date: iso,
+        // jeśli chcesz dopuszczać konflikt z CANCELLED:
+        // NOT: { status: "CANCELLED" },
+      },
+      select: { id: true },
+    });
+    if (clash) {
+      return res.status(409).json({ ok: false, error: "Ten termin został już zajęty. Wybierz inną godzinę." });
+    }
+
     // 1) zapis rezerwacji
     const booking = await prisma.booking.create({
       data: {
         fullName, email, phone,
         visitType: visitType === "Wizyta domowa" ? "WIZYTA_DOMOWA" : "TELEPORADA",
-        doctor, date: new Date(date), notes: notes || null,
+        doctor, date: iso, notes: notes || null,
         address: address || null, addressLine1: addressLine1 || null,
         postalCode: postalCode || null, city: city || null,
         pesel: pesel || null, noPesel: !!noPesel,
@@ -56,7 +73,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       },
     });
 
-    // 2) rejestracja płatności P24 – dodajemy bookingId do urlReturn
+    // 2) rejestracja płatności P24 — dorzucamy bookingId do return
     const baseReturn = process.env.P24_RETURN_URL || "https://example.com/platnosc/p24/return";
     const urlReturn = `${baseReturn}${baseReturn.includes("?") ? "&" : "?"}bookingId=${encodeURIComponent(booking.id)}`;
 

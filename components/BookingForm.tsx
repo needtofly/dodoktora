@@ -96,6 +96,9 @@ export default function BookingForm() {
       .catch(() => {});
   }, [date]);
 
+  // Szybsze sprawdzanie zajętości (Set)
+  const takenSet = useMemo(() => new Set(takenSlots), [takenSlots]);
+
   // Lista slotów do pokazania (bez przeszłości; zajęte pokażemy jako disabled)
   const displaySlots = useMemo(() => {
     if (!date) return ALL_SLOTS;
@@ -151,6 +154,20 @@ export default function BookingForm() {
     setLoading(true);
 
     try {
+      // 🔎 Pre-flight: sprawdź dostępność przed POST (gdyby slot został zajęty w międzyczasie)
+      try {
+        const avail = await fetch(`/api/bookings/availability?date=${encodeURIComponent(date)}`, { cache: "no-store" })
+          .then((r) => r.json())
+          .catch(() => ({} as any));
+        const currentTaken = new Set<string>(Array.isArray(avail?.taken) ? avail.taken : takenSlots);
+        if (currentTaken.has(time)) {
+          setLoading(false);
+          return setErrMsg("Wybrany termin właśnie został zajęty. Wybierz inną godzinę.");
+        }
+      } catch {
+        // ignorujemy — backend ma jeszcze guard 409
+      }
+
       // ISO liczone z lokalnego czasu
       const iso = localDateTimeToISO(date, time);
 
@@ -253,7 +270,7 @@ export default function BookingForm() {
             ) : (
               <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-8 gap-2">
                 {displaySlots.map((t) => {
-                  const isTaken = takenSlots.includes(t);
+                  const isTaken = takenSet.has(t);
                   const isSelected = time === t;
                   return (
                     <button
@@ -269,7 +286,7 @@ export default function BookingForm() {
                       className={[
                         "h-10 rounded-lg border text-sm",
                         isTaken
-                          ? "bg-gray-100 text-gray-400 line-through cursor-not-allowed"
+                          ? "bg-gray-100 text-gray-400 border-gray-200 line-through cursor-not-allowed"
                           : isSelected
                           ? "bg-blue-600 text-white border-blue-600"
                           : "bg-white hover:bg-blue-50 border-gray-300",
