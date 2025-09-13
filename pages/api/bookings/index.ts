@@ -1,9 +1,7 @@
 // pages/api/bookings/index.ts
 import type { NextApiRequest, NextApiResponse } from "next";
 import prisma from "@/lib/prisma";
-import { p24Register } from "@/lib/p24";
-
-const isSandbox = (process.env.P24_ENV || "sandbox") === "sandbox";
+import { payuCreateOrder } from "@/lib/payu";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method === "GET") {
@@ -29,8 +27,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const {
       fullName, email, phone,
-      visitType, doctor, date, notes,
-      address, addressLine1, postalCode, city,
+      visitType, doctor, date,
+      city, postalCode, addressLine1, address, // opcjonalnie z wizyty domowej
       pesel, noPesel,
     } = req.body || {};
 
@@ -41,20 +39,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const priceCents = visitType === "Wizyta domowa" ? 35000 : 4900;
     const currency = "PLN";
 
-    const iso = new Date(date); // klient wysyła ISO w UTC (z localDateTimeToISO)
+    const iso = new Date(date);
     if (Number.isNaN(iso.getTime())) {
       return res.status(400).json({ ok: false, error: "Invalid date" });
     }
 
-    // 🔒 BLOKADA KONFLIKTU: sprawdź czy slot nie jest już zajęty (dokładna minuta)
-    const clash = await prisma.booking.findFirst({
-      where: {
-        date: iso,
-        // jeśli chcesz dopuszczać konflikt z CANCELLED:
-        // NOT: { status: "CANCELLED" },
-      },
-      select: { id: true },
-    });
+    // blokada konfliktu
+    const clash = await prisma.booking.findFirst({ where: { date: iso }, select: { id: true } });
     if (clash) {
       return res.status(409).json({ ok: false, error: "Ten termin został już zajęty. Wybierz inną godzinę." });
     }
@@ -64,7 +55,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       data: {
         fullName, email, phone,
         visitType: visitType === "Wizyta domowa" ? "WIZYTA_DOMOWA" : "TELEPORADA",
-        doctor, date: iso, notes: notes || null,
+        doctor, date: iso,
         address: address || null, addressLine1: addressLine1 || null,
         postalCode: postalCode || null, city: city || null,
         pesel: pesel || null, noPesel: !!noPesel,
@@ -73,37 +64,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       },
     });
 
-    // 2) rejestracja płatności P24 — dorzucamy bookingId do return
-    const baseReturn = process.env.P24_RETURN_URL || "https://example.com/platnosc/p24/return";
+    // 2) PayU CreateOrder → redirect
+    const baseReturn = process.env.PAYU_RETURN_URL || "https://example.com/platnosc/payu/return";
     const urlReturn = `${baseReturn}${baseReturn.includes("?") ? "&" : "?"}bookingId=${encodeURIComponent(booking.id)}`;
 
-    try {
-      const { redirectUrl } = await p24Register({
-        sessionId: booking.id,
-        amountCents: priceCents,
-        currency,
-        description: `Rezerwacja #${booking.id} — ${visitType}`,
-        email,
-        country: "PL",
-        language: "pl",
-        urlReturn,
-        urlStatus: process.env.P24_STATUS_URL || "https://example.com/api/platnosc/p24/notify",
-      });
+    const xff = String(req.headers["x-forwarded-for"] || "");
+    const customerIp = xff.split(",")[0].trim() || "127.0.0.1";
 
-      return res.status(200).json({ ok: true, id: booking.id, redirectUrl });
-    } catch (e: any) {
-      const msg = String(e?.message || "");
-      const shouldFallback = isSandbox || /Incorrect authentication|401/.test(msg);
-      if (shouldFallback) {
-        console.warn("[P24] Fallback to mock due to:", msg);
-        return res.status(200).json({
-          ok: true,
-          id: booking.id,
-          redirectUrl: `/platnosc/p24/mock?bookingId=${encodeURIComponent(booking.id)}`,
-        });
-      }
-      throw e;
-    }
+    const { redirectUri } = await payuCreateOrder({
+      sessionId: booking.id,
+      amountCents: priceCents,
+      currency,
+      description: `Rezerwacja #${booking.id} — ${visitType}`,
+      email,
+      urlReturn,
+      notifyUrl: process.env.PAYU_NOTIFY_URL,
+      customerIp,
+    });
+
+    return res.status(200).json({ ok: true, id: booking.id, redirectUrl: redirectUri });
   } catch (e: any) {
     console.error("BOOKING POST error:", e?.message || e);
     return res.status(500).json({ ok: false, error: e?.message || "Server error" });
