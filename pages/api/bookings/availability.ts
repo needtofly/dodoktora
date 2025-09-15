@@ -2,25 +2,22 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import prisma from "@/lib/prisma";
 
-/** Format YYYY-MM-DD dla daty w strefie Europe/Warsaw */
-function warsawDateStr(d: Date) {
-  // en-CA daje YYYY-MM-DD
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Warsaw",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(d);
-}
+const TZ = "Europe/Warsaw";
 
-/** Format HH:mm dla godziny w strefie Europe/Warsaw */
-function warsawTimeStr(d: Date) {
-  return new Intl.DateTimeFormat("pl-PL", {
-    timeZone: "Europe/Warsaw",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(d);
+function parts(d: Date, opts: Intl.DateTimeFormatOptions) {
+  const map: Record<string, string> = {};
+  for (const p of new Intl.DateTimeFormat("pl-PL", { timeZone: TZ, ...opts }).formatToParts(d)) {
+    if (p.type !== "literal") map[p.type] = p.value;
+  }
+  return map;
+}
+function ymdInTz(d: Date) {
+  const m = parts(d, { year: "numeric", month: "2-digit", day: "2-digit" });
+  return `${m.year}-${m.month}-${m.day}`;
+}
+function hmInTz(d: Date) {
+  const m = parts(d, { hour: "2-digit", minute: "2-digit", hour12: false });
+  return `${m.hour}:${m.minute}`;
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -29,38 +26,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ ok: false, error: "Method Not Allowed" });
   }
 
+  const dateStr = String(req.query.date || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return res.status(400).json({ ok: false, error: "Invalid date format (YYYY-MM-DD)" });
+  }
+
+  const [y, mo, da] = dateStr.split("-").map(Number);
+
+  // szerokie okno UTC; filtr po dacie w strefie Europe/Warsaw
+  const start = new Date(Date.UTC(y, mo - 1, da - 1, 0, 0, 0));
+  const end = new Date(Date.UTC(y, mo - 1, da + 2, 0, 0, 0));
+
   try {
-    const dateStr = String(req.query.date || "").trim(); // oczekujemy YYYY-MM-DD (lokalny dzień PL)
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-      return res.status(400).json({ ok: false, error: "Invalid date" });
-    }
-
-    // Pobierz tylko ograniczony zakres (dzień +/- 1) i odfiltruj po PL dacie
-    const day = new Date(`${dateStr}T12:00:00.000Z`); // środek dnia, by uniknąć granic DST
-    const before = new Date(day.getTime() - 36 * 60 * 60 * 1000);
-    const after = new Date(day.getTime() + 36 * 60 * 60 * 1000);
-
-    const bookings = await prisma.booking.findMany({
-      where: {
-        date: { gte: before, lte: after },
-        // jeśli masz pole "status" i "CANCELLED", można wykluczyć odwołane:
-        // NOT: { status: "CANCELLED" },
-      },
+    const rows = await prisma.booking.findMany({
+      where: { date: { gte: start, lt: end }, status: { not: "CANCELLED" } },
       select: { date: true },
-      orderBy: { date: "asc" },
     });
 
-    const taken: string[] = [];
-    for (const b of bookings) {
-      const d = new Date(b.date);
-      if (warsawDateStr(d) === dateStr) {
-        taken.push(warsawTimeStr(d)); // "HH:mm"
-      }
+    const takenSet = new Set<string>();
+    for (const r of rows) {
+      if (ymdInTz(r.date) === dateStr) takenSet.add(hmInTz(r.date)); // "HH:MM" PL
     }
 
-    // unikalne i posortowane
-    const uniq = Array.from(new Set(taken)).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-    return res.status(200).json({ ok: true, taken: uniq });
+    const taken = Array.from(takenSet).sort();
+    return res.status(200).json({ ok: true, taken });
   } catch (e: any) {
     return res.status(500).json({ ok: false, error: e?.message || "DB error" });
   }
