@@ -3,13 +3,15 @@
 
 import { useEffect, useState } from "react";
 
+type UiState = "checking" | "paid" | "rejected" | "unpaid" | "error";
+
 export default function PayUReturnPage({
   searchParams,
 }: {
   searchParams: Record<string, string | string[] | undefined>;
 }) {
   const bookingId = String(searchParams?.bookingId || "");
-  const [status, setStatus] = useState<"checking" | "paid" | "unpaid" | "error">("checking");
+  const [status, setStatus] = useState<UiState>("checking");
   const [message, setMessage] = useState<string>("");
 
   useEffect(() => {
@@ -35,12 +37,20 @@ export default function PayUReturnPage({
         }
 
         const pay = String(j.booking?.paymentStatus || "").toUpperCase();
-        if (pay === "PAID") {
+        const st = String(j.booking?.status || "").toUpperCase();
+
+        if (pay === "PAID" || st === "CONFIRMED") {
           setStatus("paid");
           return; // stop polling
         }
 
-        // nadal nieopłacone — sprawdzimy ponownie za 2 sekundy
+        if (pay === "REJECTED" || st === "CANCELLED") {
+          setStatus("rejected");
+          setMessage("Płatność odrzucona lub anulowana.");
+          return; // stop polling
+        }
+
+        // wciąż w toku — polling co 2s
         timer = setTimeout(poll, 2000);
       } catch (e: any) {
         setStatus("error");
@@ -48,12 +58,10 @@ export default function PayUReturnPage({
       }
     }
 
-    // start pierwszego sprawdzenia
     setStatus("checking");
     setMessage("");
     poll();
 
-    // cleanup: pewny typ void
     return () => {
       if (timer) clearTimeout(timer);
     };
@@ -67,9 +75,7 @@ export default function PayUReturnPage({
       </p>
 
       {status === "checking" && (
-        <div className="rounded-xl border p-4 bg-white shadow-sm">
-          Trwa weryfikacja płatności…
-        </div>
+        <div className="rounded-xl border p-4 bg-white shadow-sm">Trwa weryfikacja płatności…</div>
       )}
 
       {status === "paid" && (
@@ -81,16 +87,23 @@ export default function PayUReturnPage({
         </div>
       )}
 
+      {status === "rejected" && (
+        <div className="rounded-xl border p-4 bg-red-50 border-red-200 text-red-700 shadow-sm">
+          ❌ Płatność odrzucona lub anulowana. Twoja rezerwacja nie została opłacona, a termin został zwolniony.
+          <div className="mt-4 space-x-2">
+            <a href="/" className="btn">Wróć</a>
+            <a href="/#umow" className="btn btn-primary">Umów ponownie</a>
+          </div>
+        </div>
+      )}
+
       {status === "error" && (
         <div className="rounded-xl border p-4 bg-red-50 border-red-200 text-red-700 shadow-sm">
           ❌ Coś poszło nie tak: {message || "Nieznany błąd."}
           <div className="mt-4 space-x-2">
             <a href="/" className="btn">Wróć</a>
             {bookingId && (
-              <a
-                href={`/platnosc/payu/return?bookingId=${encodeURIComponent(bookingId)}`}
-                className="btn btn-primary"
-              >
+              <a href={`/platnosc/payu/return?bookingId=${encodeURIComponent(bookingId)}`} className="btn btn-primary">
                 Spróbuj ponownie
               </a>
             )}
@@ -100,7 +113,7 @@ export default function PayUReturnPage({
 
       {status === "unpaid" && (
         <div className="rounded-xl border p-4 bg-yellow-50 border-yellow-200 text-yellow-800 shadow-sm">
-          ⏳ Płatność w trakcie lub nieudana. Jeśli środki zostały pobrane, status zaktualizuje się wkrótce.
+          ⏳ Płatność w trakcie. Jeśli środki zostały pobrane, status zaktualizuje się wkrótce.
         </div>
       )}
     </main>
