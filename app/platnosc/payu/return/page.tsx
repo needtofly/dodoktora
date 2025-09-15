@@ -1,3 +1,4 @@
+// app/platnosc/payu/return/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -12,7 +13,8 @@ export default function PayUReturnPage({
   const [message, setMessage] = useState<string>("");
 
   useEffect(() => {
-    let timer: number | undefined;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
     async function poll() {
       try {
         if (!bookingId) {
@@ -20,27 +22,41 @@ export default function PayUReturnPage({
           setMessage("Brak identyfikatora rezerwacji.");
           return;
         }
-        const r = await fetch(`/api/bookings?id=${encodeURIComponent(bookingId)}`, { cache: "no-store" });
+
+        const r = await fetch(`/api/bookings?id=${encodeURIComponent(bookingId)}`, {
+          cache: "no-store",
+        });
         const j = await r.json();
+
         if (!r.ok || !j?.ok) {
           setStatus("error");
           setMessage(j?.error || `Błąd serwera (${r.status})`);
           return;
         }
-        const pay = (j.booking?.paymentStatus || "").toUpperCase();
+
+        const pay = String(j.booking?.paymentStatus || "").toUpperCase();
         if (pay === "PAID") {
           setStatus("paid");
-          return;
+          return; // stop polling
         }
-        // jeżeli jeszcze nie zapłacone — odśwież co 2s
-        timer = window.setTimeout(poll, 2000);
+
+        // nadal nieopłacone — sprawdzimy ponownie za 2 sekundy
+        timer = setTimeout(poll, 2000);
       } catch (e: any) {
         setStatus("error");
         setMessage(String(e?.message || e));
       }
     }
+
+    // start pierwszego sprawdzenia
+    setStatus("checking");
+    setMessage("");
     poll();
-    return () => timer && window.clearTimeout(timer);
+
+    // cleanup: pewny typ void
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
   }, [bookingId]);
 
   return (
@@ -71,7 +87,10 @@ export default function PayUReturnPage({
           <div className="mt-4 space-x-2">
             <a href="/" className="btn">Wróć</a>
             {bookingId && (
-              <a href={`/platnosc/payu/return?bookingId=${encodeURIComponent(bookingId)}`} className="btn btn-primary">
+              <a
+                href={`/platnosc/payu/return?bookingId=${encodeURIComponent(bookingId)}`}
+                className="btn btn-primary"
+              >
                 Spróbuj ponownie
               </a>
             )}
