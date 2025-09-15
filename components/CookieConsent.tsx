@@ -9,8 +9,20 @@ type Consents = {
   marketing: boolean;
 };
 
+type LogEntry = {
+  type: "consent_update";
+  at: string;            // ISO
+  source: string;        // np. banner_accept_all / settings_save / necessary_only
+  consents: Consents;
+  href: string;
+  referer: string;
+  ua: string;
+  version: string;       // wersja tekstu / banera
+};
+
 const COOKIE_NAME = "cookie_consent_v1";
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 365; // 1 rok
+const CONSENT_VERSION = "v1"; // podbijaj przy zmianach tekstu/zakresów
 
 function readConsent(): Consents | null {
   try {
@@ -32,7 +44,7 @@ function readConsent(): Consents | null {
 }
 
 function writeConsent(c: Consents) {
-  const payload = encodeURIComponent(JSON.stringify({ ...c, ts: Date.now() }));
+  const payload = encodeURIComponent(JSON.stringify({ ...c, ts: Date.now(), version: CONSENT_VERSION }));
   const secure = location.protocol === "https:" ? "; Secure" : "";
   document.cookie = `${COOKIE_NAME}=${payload}; Max-Age=${COOKIE_MAX_AGE}; Path=/; SameSite=Lax${secure}`;
 }
@@ -47,6 +59,43 @@ function updateGtagConsent(c: Consents) {
     ad_personalization: granted(c.marketing),
     functionality_storage: "granted",
     security_storage: "granted",
+  });
+}
+
+function logLocalAndBeacon(entry: LogEntry) {
+  try {
+    const key = "cookie_consent_log";
+    const arr: LogEntry[] = JSON.parse(localStorage.getItem(key) || "[]");
+    arr.push(entry);
+    if (arr.length > 200) arr.splice(0, arr.length - 200); // max 200 wpisów
+    localStorage.setItem(key, JSON.stringify(arr));
+  } catch {}
+
+  try {
+    const data = JSON.stringify(entry);
+    const blob = new Blob([data], { type: "application/json" });
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon("/api/privacy/consent-log", blob);
+    } else {
+      fetch("/api/privacy/consent-log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: data,
+        keepalive: true,
+      }).catch(() => {});
+    }
+  } catch {}
+}
+
+function gtagEvent(consents: Consents, source: string) {
+  // @ts-ignore
+  window.gtag?.("event", "cookie_consent_update", {
+    event_category: "consent",
+    event_label: source,
+    consent_version: CONSENT_VERSION,
+    analytics: consents.analytics ? 1 : 0,
+    marketing: consents.marketing ? 1 : 0,
+    non_interaction: true,
   });
 }
 
@@ -89,17 +138,34 @@ export default function CookieConsent() {
     }
   }, []);
 
-  const onSave = (all = false) => {
+  function finalize(consents: Consents, source: string) {
+    writeConsent(consents);
+    updateGtagConsent(consents);
+    gtagEvent(consents, source);
+
+    const entry: LogEntry = {
+      type: "consent_update",
+      at: new Date().toISOString(),
+      source,
+      consents,
+      href: location.href,
+      referer: document.referrer || "",
+      ua: navigator.userAgent,
+      version: CONSENT_VERSION,
+    };
+    logLocalAndBeacon(entry);
+
+    setVisible(false);
+    setSettingsOpen(false);
+    window.dispatchEvent(new CustomEvent("consentchange", { detail: consents }));
+  }
+
+  const onSave = (all = false, source = "settings_save") => {
     const consents: Consents = all
       ? { necessary: true, analytics: true, marketing: true }
       : { necessary: true, analytics, marketing };
 
-    writeConsent(consents);
-    updateGtagConsent(consents);
-    setVisible(false);
-    setSettingsOpen(false);
-
-    window.dispatchEvent(new CustomEvent("consentchange", { detail: consents }));
+    finalize(consents, source);
   };
 
   const body = useMemo(
@@ -133,11 +199,9 @@ export default function CookieConsent() {
               <div className="mt-3 md:mt-0 flex gap-2 shrink-0">
                 <button
                   className="px-4 h-10 rounded-xl border border-gray-300 hover:bg-gray-50"
-                  onClick={() => {
-                    setAnalytics(false);
-                    setMarketing(false);
-                    onSave(false);
-                  }}
+                  onClick={() =>
+                    finalize({ necessary: true, analytics: false, marketing: false }, "banner_necessary_only")
+                  }
                 >
                   Tylko niezbędne
                 </button>
@@ -149,7 +213,7 @@ export default function CookieConsent() {
                 </button>
                 <button
                   className="px-4 h-10 rounded-xl bg-blue-600 text-white hover:bg-blue-700"
-                  onClick={() => onSave(true)}
+                  onClick={() => onSave(true, "banner_accept_all")}
                 >
                   Akceptuję wszystkie
                 </button>
@@ -215,11 +279,14 @@ export default function CookieConsent() {
               </button>
               <button
                 className="px-4 h-10 rounded-xl border border-blue-600 text-blue-700 bg-white hover:bg-blue-50"
-                onClick={() => onSave(false)}
+                onClick={() => onSave(false, "settings_save")}
               >
                 Zapisz wybór
               </button>
-              <button className="px-4 h-10 rounded-xl bg-blue-600 text-white hover:bg-blue-700" onClick={() => onSave(true)}>
+              <button
+                className="px-4 h-10 rounded-xl bg-blue-600 text-white hover:bg-blue-700"
+                onClick={() => onSave(true, "settings_accept_all")}
+              >
                 Akceptuję wszystkie
               </button>
             </div>
