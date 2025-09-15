@@ -3,6 +3,8 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import prisma from "@/lib/prisma";
 import { payuCreateOrder } from "@/lib/payu";
 
+const HOLD_MINUTES = Number(process.env.BOOKING_HOLD_MINUTES || "20");
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method === "GET") {
     try {
@@ -44,10 +46,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ ok: false, error: "Invalid date" });
     }
 
-    // blokada konfliktu (ten sam UTC)
-    const clash = await prisma.booking.findFirst({ where: { date: iso }, select: { id: true } });
-    if (clash) {
-      return res.status(409).json({ ok: false, error: "Ten termin został już zajęty. Wybierz inną godzinę." });
+    // 🔒 Kolizje: blokujemy tylko PAID lub świeże (<= HOLD_MINUTES) nieopłacone
+    const holdCutoff = new Date(Date.now() - HOLD_MINUTES * 60_000);
+    const conflict = await prisma.booking.findFirst({
+      where: {
+        date: iso,
+        OR: [
+          { paymentStatus: "PAID" },
+          {
+            AND: [
+              { status: { not: "CANCELLED" } }, // PENDING/CONFIRMED itp.
+              { createdAt: { gt: holdCutoff } }, // świeża blokada na czas płatności
+            ],
+          },
+        ],
+      },
+      select: { id: true, status: true, paymentStatus: true, createdAt: true },
+    });
+
+    if (conflict) {
+      return res.status(409).json({
+        ok: false,
+        error: "Ten termin został już zajęty. Wybierz inną godzinę.",
+      });
     }
 
     // 1) zapis rezerwacji
@@ -56,11 +77,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         fullName, email, phone,
         visitType: visitType === "Wizyta domowa" ? "WIZYTA_DOMOWA" : "TELEPORADA",
         doctor, date: iso,
-        address: address || null, addressLine1: addressLine1 || null,
-        postalCode: postalCode || null, city: city || null,
-        pesel: pesel || null, noPesel: !!noPesel,
+        address: address || null,
+        addressLine1: addressLine1 || null,
+        postalCode: postalCode || null,
+        city: city || null,
+        pesel: pesel || null,
+        noPesel: !!noPesel,
         priceCents, currency,
-        status: "PENDING", paymentStatus: "UNPAID",
+        status: "PENDING",
+        paymentStatus: "UNPAID",
       },
     });
 

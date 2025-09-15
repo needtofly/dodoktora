@@ -3,7 +3,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import prisma from "@/lib/prisma";
 
 const TZ = "Europe/Warsaw";
-const HOLD_MINUTES = 20; // ile minut slot jest tymczasowo zablokowany na czas płatności
+const HOLD_MINUTES = Number(process.env.BOOKING_HOLD_MINUTES || "20");
 
 function parts(d: Date, opts: Intl.DateTimeFormatOptions) {
   const map: Record<string, string> = {};
@@ -33,8 +33,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const [y, mo, da] = dateStr.split("-").map(Number);
-
-  // szerokie okno UTC; później przefiltrujemy po dacie w strefie PL
   const start = new Date(Date.UTC(y, mo - 1, da - 1, 0, 0, 0));
   const end = new Date(Date.UTC(y, mo - 1, da + 2, 0, 0, 0));
   const holdCutoff = new Date(Date.now() - HOLD_MINUTES * 60_000);
@@ -43,27 +41,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const rows = await prisma.booking.findMany({
       where: {
         date: { gte: start, lt: end },
-        // pobieramy WSZYSTKIE (w tym CANCELLED), bo i tak filtrowanie robimy logiką poniżej
       },
       select: { date: true, createdAt: true, status: true, paymentStatus: true },
     });
 
     const takenSet = new Set<string>();
-
     for (const r of rows) {
       if (ymdInTz(r.date) !== dateStr) continue;
 
       const status = String(r.status || "").toUpperCase();
       const pay = String(r.paymentStatus || "").toUpperCase();
 
-      // CANCELLED nigdy nie blokuje
-      if (status === "CANCELLED") continue;
+      if (status === "CANCELLED") continue; // anulowane nie blokują
 
       const isPaid = pay === "PAID";
-      const isFreshHold = r.createdAt > holdCutoff; // tymczasowa blokada
+      const isFreshHold = r.createdAt > holdCutoff;
 
       if (isPaid || isFreshHold) {
-        takenSet.add(hmInTz(r.date)); // blokujemy slot (HH:MM)
+        takenSet.add(hmInTz(r.date));
       }
     }
 
