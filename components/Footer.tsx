@@ -1,5 +1,6 @@
 // components/Footer.tsx
 import Link from "next/link"
+import CookieSettingsLink from "./CookieSettingsLink" // ⬅️ DODANE
 
 export default function Footer() {
   // te wartości wczytujemy z .env (serwerowy komponent — OK)
@@ -80,6 +81,9 @@ export default function Footer() {
           <Link href="/polityka-prywatnosci" className="hover:text-gray-700">Polityka prywatności</Link>
           <span aria-hidden>•</span>
           <Link href="/uslugi" className="hover:text-gray-700">Cennik</Link>
+          <span aria-hidden>•</span>
+          {/* ⬇️ NOWE: otwarcie panelu zgód */}
+          <CookieSettingsLink className="hover:text-gray-700" />
         </div>
       </div>
     </footer>
