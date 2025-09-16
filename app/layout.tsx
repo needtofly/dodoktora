@@ -31,7 +31,7 @@ export const metadata: Metadata = {
     locale: "pl_PL",
     type: "website",
   },
-  // te wpisy mogą zostać jako fallback
+  // fallbacki ikon
   icons: {
     icon: [
       { url: "/favicon.ico?v=6", rel: "icon", sizes: "any" },
@@ -51,7 +51,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="pl">
       <head>
-        {/* ✅ TWARDY favicon: wbudowany data URL (SVG) – BIAŁY KRZYŻ na NIEBIESKIM tle, ZAOKRĄGLONY */}
+        {/* Twardy favicon (data URL SVG) */}
         <link
           rel="icon"
           type="image/svg+xml"
@@ -64,7 +64,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             "PSIjZmZmIi8+PC9zdmc+"
           }
         />
-        {/* Fallbacki plikowe (jeśli kiedyś będziesz chciał wrócić do plików z public/) */}
+        {/* Fallbacki plikowe */}
         <link rel="icon" href="/favicon-32.png?v=6" sizes="32x32" type="image/png" />
         <link rel="icon" href="/favicon-16.png?v=6" sizes="16x16" type="image/png" />
         <link rel="icon" href="/favicon.ico?v=6" />
