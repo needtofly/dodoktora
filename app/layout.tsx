@@ -31,15 +31,15 @@ export const metadata: Metadata = {
     locale: "pl_PL",
     type: "website",
   },
-  // te wpisy zostawiamy (OK), ale dodatkowo dajemy <head> z ręcznymi linkami (poniżej)
+  // te wpisy mogą zostać jako fallback
   icons: {
     icon: [
-      { url: "/favicon.ico?v=5", rel: "icon", sizes: "any" },
-      { url: "/favicon-32.png?v=5", type: "image/png", sizes: "32x32" },
-      { url: "/favicon-16.png?v=5", type: "image/png", sizes: "16x16" },
+      { url: "/favicon.ico?v=6", rel: "icon", sizes: "any" },
+      { url: "/favicon-32.png?v=6", type: "image/png", sizes: "32x32" },
+      { url: "/favicon-16.png?v=6", type: "image/png", sizes: "16x16" },
     ],
-    apple: "/apple-touch-icon.png?v=5",
-    shortcut: "/favicon.ico?v=5",
+    apple: "/apple-touch-icon.png?v=6",
+    shortcut: "/favicon.ico?v=6",
   },
 };
 
@@ -51,12 +51,24 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="pl">
       <head>
-        {/* RĘCZNE linki do favicon – mają najwyższy priorytet */}
-        <link rel="icon" href="/favicon-32.png?v=5" sizes="32x32" type="image/png" />
-        <link rel="icon" href="/favicon-16.png?v=5" sizes="16x16" type="image/png" />
-        <link rel="icon" href="/favicon.ico?v=5" />
-        <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=5" />
-        {/* Jeśli masz app/icon.png (512x512) – Next wygeneruje dodatkowe warianty; to OK. */}
+        {/* ✅ TWARDY favicon: wbudowany data URL (SVG) – BIAŁY KRZYŻ na NIEBIESKIM tle, ZAOKRĄGLONY */}
+        <link
+          rel="icon"
+          type="image/svg+xml"
+          href={
+            "data:image/svg+xml;base64," +
+            "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+" +
+            "PHJlY3QgeD0iMiIgeT0iMiIgd2lkdGg9IjYwIiBoZWlnaHQ9IjYwIiByeD0iMTIiIGZpbGw9IiMyNTYz" +
+            "ZWIiLz48cmVjdCB4PSIyOSIgeT0iMTQiIHdpZHRoPSI2IiBoZWlnaHQ9IjM2IiByeD0iMyIgZmlsbD0i" +
+            "I2ZmZiIvPjxyZWN0IHg9IjE0IiB5PSIyOSIgd2lkdGg9IjM2IiBoZWlnaHQ9IjYiIHJ4PSIzIiBmaWxs" +
+            "PSIjZmZmIi8+PC9zdmc+"
+          }
+        />
+        {/* Fallbacki plikowe (jeśli kiedyś będziesz chciał wrócić do plików z public/) */}
+        <link rel="icon" href="/favicon-32.png?v=6" sizes="32x32" type="image/png" />
+        <link rel="icon" href="/favicon-16.png?v=6" sizes="16x16" type="image/png" />
+        <link rel="icon" href="/favicon.ico?v=6" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=6" />
       </head>
       <body className="flex min-h-screen flex-col bg-white text-gray-900">
         {/* Google Analytics + Consent Mode */}
