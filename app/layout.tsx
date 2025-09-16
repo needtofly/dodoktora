@@ -12,7 +12,8 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://dodoktora.co";
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: "dodoktora.co — Teleporady i wizyty domowe",
-  description: "Zarezerwuj teleporadę lub wizytę domową u lekarza. Profesjonalna opieka medyczna dostępna online.",
+  description:
+    "Zarezerwuj teleporadę lub wizytę domową u lekarza. Profesjonalna opieka medyczna dostępna online.",
   keywords: ["teleporada", "wizyta domowa", "lekarz online", "przychodnia", "dodoktora.co"],
   openGraph: {
     title: "dodoktora.co — Teleporady i wizyty domowe",
@@ -30,10 +31,15 @@ export const metadata: Metadata = {
     locale: "pl_PL",
     type: "website",
   },
+  // te wpisy zostawiamy (OK), ale dodatkowo dajemy <head> z ręcznymi linkami (poniżej)
   icons: {
-    icon: "/favicon.ico",
-    shortcut: "/favicon.ico",
-    apple: "/apple-touch-icon.png",
+    icon: [
+      { url: "/favicon.ico?v=5", rel: "icon", sizes: "any" },
+      { url: "/favicon-32.png?v=5", type: "image/png", sizes: "32x32" },
+      { url: "/favicon-16.png?v=5", type: "image/png", sizes: "16x16" },
+    ],
+    apple: "/apple-touch-icon.png?v=5",
+    shortcut: "/favicon.ico?v=5",
   },
 };
 
@@ -44,6 +50,14 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pl">
+      <head>
+        {/* RĘCZNE linki do favicon – mają najwyższy priorytet */}
+        <link rel="icon" href="/favicon-32.png?v=5" sizes="32x32" type="image/png" />
+        <link rel="icon" href="/favicon-16.png?v=5" sizes="16x16" type="image/png" />
+        <link rel="icon" href="/favicon.ico?v=5" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=5" />
+        {/* Jeśli masz app/icon.png (512x512) – Next wygeneruje dodatkowe warianty; to OK. */}
+      </head>
       <body className="flex min-h-screen flex-col bg-white text-gray-900">
         {/* Google Analytics + Consent Mode */}
         <Gtag />
